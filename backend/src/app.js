@@ -31,7 +31,7 @@ app.use(session({
   saveUninitialized: false,
   cookie: {
     secure: true,          // Render uses HTTPS
-    sameSite: "lax",      // Needed for cross-site (Vercel → Render)
+    sameSite: "none",      // Needed for cross-site (Vercel → Render)
     httpOnly: true
   }
 }));
