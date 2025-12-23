@@ -9,15 +9,9 @@ const adminroutes = require('./routes/adminroutes');
 
 const app = express();
 
-app.use(cors({
-  origin: 'http://localhost:5173', // Your React app URL
-  credentials: true, // Allow cookies to be sent
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
 
 app.use(cors({
-  origin: 'http://localhost:5173', // Your React app URL
+  origin: process.env.Front_END_URL, // Your React app URL
   credentials: true, // Allow cookies to be sent
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization']
