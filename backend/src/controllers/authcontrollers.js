@@ -2,6 +2,8 @@ const session = require("express-session");
 const usermodal = require("../models/usermodel.js");
 const bcrypt = require("bcrypt");
 const nodemailer = require("nodemailer");
+const { Resend } =require('resend');
+const resend =new Resend(process.env.RESEND_API_KEY);
 
 
 
@@ -45,31 +47,16 @@ const getotp = async (req, res) => {
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
   try {
-    const transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 587,
-      secure: false,
-      auth: {
-        user: process.env.GMAIL_EMAIL,
-        pass: process.env.GMAIL_APP_PASSWORD,
-      },
-      connectionTimeout: 15000,
-      greetingTimeout: 15000,
-      socketTimeout: 15000,
-    });
-
-    await transporter.verify();
-
-    await transporter.sendMail({
-      from: process.env.GMAIL_EMAIL,
-      to: loginData,
-      subject: "Login OTP",
-      html: `
+      await resend.emails.send({
+        from: 'onboarding@resend.dev',
+        to: loginData,
+        subject: "Login OTP",
+        html: `
         <h1>Your OTP is <b>${otp}</b></h1>
         <img style="width:300px" src="https://res.cloudinary.com/dooityhzp/image/upload/v1765341313/CiS_tpditl.jpg" />
         <p>CitiSolve sends a secure, time-bound OTP.</p>
-      `,
-    });
+        `,
+      });
 
     console.log("OTP sent");
     res.json({ success: true, message: "OTP sent",otp:otp });
