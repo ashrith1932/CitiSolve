@@ -9,6 +9,7 @@ const adminroutes = require('./routes/adminroutes');
 
 const app = express();
 
+app.use(express.json());
 
 app.use(cors({
   origin: process.env.Front_END_URL, // Your React app URL

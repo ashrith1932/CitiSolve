@@ -71,22 +71,31 @@ const CitiSolveLanding = () => {
     { number: "24/7", label: "Support Available" }
   ];
 
-  const generateotp = async() =>{
-    setOtpSent(true);
-    setenable(false);
-    const d = await fetch(import.meta.env.VITE_BACKEND_URL+"/api/auth/generateotp",{
+  const generateotp = async (emailToSend) => {
+  if (!emailToSend) {
+    console.error("❌ generateotp called without email");
+    return;
+  }
+
+  setenable(false);
+  setShowloader(true);
+
+  const d = await fetch(
+    import.meta.env.VITE_BACKEND_URL + "/api/auth/generateotp",
+    {
       method: "POST",
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({
-        email:email
-      })
-    })
-    const res = await d.json();
-    setfotp(res.otp);
-    setenable(true);
+      body: JSON.stringify({ email: emailToSend })
+    }
+  );
 
-  }
+  const res = await d.json();
+  setfotp(res.otp);
+  setenable(true);
+  setShowloader(false);
+};
+
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setOtpSent(false); // Reset first
@@ -130,13 +139,14 @@ const CitiSolveLanding = () => {
       const data = await res.json();
       
       if (res.ok) {
-        // ❌ Remove: setsessiondata(data.data);
         console.log('✅ Authentication successful:', data);
+        const userEmail = formData.get('email'); // ✅ capture immediately
+        const userPassword = formData.get('password');
+        setemail(userEmail);
+        setpassword(userPassword);
         setOtpSent(true);
         setlogin(true);
-        setemail(formData.get('email'));
-        setpassword(formData.get('password'));
-        generateotp(); // Send OTP
+        await generateotp(userEmail); // ✅ pass email explicitly
         setShowloader(false);
       } else {
         console.error('❌ Authentication failed:', data.message);
@@ -412,7 +422,7 @@ const CitiSolveLanding = () => {
                   authMode === 'login' ? 'Login 🚀' : 'Create Account 🚀'
                 )}
               </button>
-              <button type="button" className={styles.submitBtn} onClick={()=>generateotp()} disabled={showloader}>
+              <button type="button" className={styles.submitBtn} onClick={()=>generateotp(email)} disabled={showloader}>
                 {showloader ? (
                   <div style={loaderStyles}></div>
                 ) : (

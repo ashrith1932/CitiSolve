@@ -37,6 +37,9 @@ const getMe = async(req, res) => {
 
 const getotp = async(req, res) => {
   const loginData = req.body.email||req.session?.pendingUser?.email;
+  if (!loginData) {
+        return res.status(400).json({ success: false, message: "Email recipient is required" });
+    }
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     console.log('Login data received:', loginData);
     const transporter = nodemailer.createTransport({
