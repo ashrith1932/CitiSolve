@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import styles from "./Complaintstyle.module.css";
+import styles from "./complaintstyle.module.css";
 import { useNavigate } from "react-router-dom";
 
 const Complaint = () => {
