@@ -35,37 +35,51 @@ const getMe = async(req, res) => {
     }
 }
 
-const getotp = async(req, res) => {
-  const loginData = req.body.email||req.session?.pendingUser?.email;
+const getotp = async (req, res) => {
+  const loginData = req.body.email || req.session?.pendingUser?.email;
+
   if (!loginData) {
-        return res.status(400).json({ success: false, message: "Email recipient is required" });
-    }
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    console.log('Login data received:', loginData);
+    return res.status(400).json({ success: false, message: "Email required" });
+  }
+
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+  try {
     const transporter = nodemailer.createTransport({
-        service: "gmail",
-        auth: {
-            user: process.env.gmail,
-            pass: process.env.app_password, // Gmail App password
-        },
+      host: "smtp.gmail.com",
+      port: 587,
+      secure: false,
+      auth: {
+        user: process.env.GMAIL_EMAIL,
+        pass: process.env.GMAIL_APP_PASSWORD,
+      },
+      connectionTimeout: 15000,
+      greetingTimeout: 15000,
+      socketTimeout: 15000,
     });
 
-    const mailOptions = {
-        from: process.env.gmail,
-        to: loginData,
-        subject: "Login OTP",
-        html:`<h1>Your OTP is <b>${otp}</b></h1><img style="display: block; width: 100%; max-width: 300px; height: auto;" src="https://res.cloudinary.com/dooityhzp/image/upload/v1765341313/CiS_tpditl.jpg"  alt="Ci S" border="0">
-        <p>CitiSolve sends a secure, time-bound OTP to verify your identity whenever you log in or sign up. Enter the OTP sent to your email/mobile to proceed.</p>`,
-    };
-    try {
-        await transporter.sendMail(mailOptions);
-        console.log("OTP sent successfully");
-        res.json({ success: true, message: "OTP sent successfully!",otp: otp });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ success: false, message: "Error sending email" });
-    }
-}
+    await transporter.verify();
+
+    await transporter.sendMail({
+      from: process.env.GMAIL_EMAIL,
+      to: loginData,
+      subject: "Login OTP",
+      html: `
+        <h1>Your OTP is <b>${otp}</b></h1>
+        <img style="width:300px" src="https://res.cloudinary.com/dooityhzp/image/upload/v1765341313/CiS_tpditl.jpg" />
+        <p>CitiSolve sends a secure, time-bound OTP.</p>
+      `,
+    });
+
+    console.log("OTP sent");
+    res.json({ success: true, message: "OTP sent",otp:otp });
+
+  } catch (err) {
+    console.error("EMAIL ERROR:", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 
 const handlesubmit = async(req, res) => {
     const { fullname, email, password, ward_department, role } = req.body;

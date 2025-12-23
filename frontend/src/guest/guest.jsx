@@ -91,7 +91,8 @@ const CitiSolveLanding = () => {
   );
 
   const res = await d.json();
-  setfotp(res.otp);
+  const otp = res.otp;
+  setfotp(otp);
   setenable(true);
   setShowloader(false);
 };
@@ -191,14 +192,6 @@ const CitiSolveLanding = () => {
     
     if(enteredOtp === fotp){
         try {
-            if(authMode==='signup'){
-              const create = await fetch(import.meta.env.VITE_BACKEND_URL+"/api/auth/createuser", {
-                method: "POST",
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include', // ✅ Important: Include credentials
-                body: JSON.stringify({password})
-              })
-            }
             // ✅ Just call setsession - user data is already in server session
             const d = await fetch(import.meta.env.VITE_BACKEND_URL+"/api/auth/setsession", {
                 method: "POST",
