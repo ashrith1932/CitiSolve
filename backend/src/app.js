@@ -21,17 +21,20 @@ app.use(cors({
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Session middleware - MUST be before routes
+app.set("trust proxy", 1); // IMPORTANT for Render
+
 app.use(session({
+  name: "connect.sid",
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: false, // Set to true in production with HTTPS
-    httpOnly: true,
-    maxAge: 1000 * 60 * 60 * 24 // 24 hours
+    secure: true,          // Render uses HTTPS
+    sameSite: "none",      // Needed for cross-site (Vercel → Render)
+    httpOnly: true
   }
 }));
+
 
 // Request logging middleware
 app.use((req, res, next) => {
