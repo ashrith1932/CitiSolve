@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import styles from "./Citizenstyle.module.css";
+import styles from "./citizenstyle.module.css";
 import Chart from "chart.js/auto";
 
 const CitizenPortal = () => {
