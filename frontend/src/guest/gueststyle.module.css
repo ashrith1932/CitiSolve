@@ -141,6 +141,12 @@ select:disabled {
   background-clip: text;
 }
 
+.submitBtn:disabled{
+  color:rgb(255, 254, 254);
+  background-color: rgb(74, 74, 74);
+  background-image: none;
+}
+
 .navScrolled .navLink {
   color: #fefae0;
 }
