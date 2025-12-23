@@ -18,6 +18,7 @@ const CitiSolveLanding = () => {
   const [login,setlogin] = useState(false);
   const [email, setemail] = useState("");
   const [password, setpassword] = useState("");
+  const [enable,setenable]=useState(false);
 
   const handleotpchange = (e, index) =>{
     if(isNaN(e.target.value)) return;
@@ -72,6 +73,7 @@ const CitiSolveLanding = () => {
 
   const generateotp = async() =>{
     setOtpSent(true);
+    setenable(false);
     const d = await fetch(import.meta.env.VITE_BACKEND_URL+"/api/auth/generateotp",{
       method: "POST",
       headers: { 'Content-Type': 'application/json' },
@@ -82,6 +84,7 @@ const CitiSolveLanding = () => {
     })
     const res = await d.json();
     setfotp(res.otp);
+    setenable(true);
 
   }
   const handleAuthSubmit = async (e) => {
@@ -402,7 +405,7 @@ const CitiSolveLanding = () => {
               )}
               {otpsent&&login&&(
               <>
-              <button type="button" onClick = {handleotp} className={styles.submitBtn} disabled={showloader}>
+              <button type="button" onClick = {handleotp} className={styles.submitBtn} disabled={showloader||!enable}>
                 {showloader ? (
                   <div style={loaderStyles}></div>
                 ) : (
