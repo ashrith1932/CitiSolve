@@ -30,7 +30,7 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: false,          // Render uses HTTPS
+    secure: true,          // Render uses HTTPS
     sameSite: "lax",      // Needed for cross-site (Vercel → Render)
     httpOnly: true
   }
