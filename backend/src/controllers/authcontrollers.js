@@ -1,13 +1,289 @@
-const session = require("express-session");
 const usermodal = require("../models/usermodel.js");
 const bcrypt = require("bcrypt");
 const nodemailer = require("nodemailer");
-const { Resend } =require('resend');
-const resend =new Resend(process.env.RESEND_API_KEY);
 
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.GMAIL_EMAIL,
+    pass: process.env.GMAIL_APP_PASSWORD,
+  },
+});
 
+// ============================================
+// HELPER: Generate OTP
+// ============================================
+function generateOTP() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
 
-const handleLogout = async(req, res) => {
+// ============================================
+// HELPER: Send OTP Email
+// ============================================
+async function sendOTPEmail(email, otp) {
+  await transporter.sendMail({
+    from: `"CitiSolve OTP" <${process.env.GMAIL_EMAIL}>`,
+    to: email,
+    subject: "Your Login OTP",
+    html: `
+      <div style="font-family: Arial, sans-serif; padding: 20px;">
+        <h2>Your OTP is ${otp}</h2>
+        <p>CitiSolve sends a secure, time-bound OTP.</p>
+        <p>Do not share this OTP with anyone.</p>
+        <p>Valid for 10 minutes.</p>
+      </div>
+    `,
+  });
+}
+
+// ============================================
+// 1. SIGNUP - Initial Step
+// ============================================
+const signup = async (req, res) => {
+  try {
+    const { fullname, email, password, ward_department, role } = req.body;
+
+    // Validation
+    if (!fullname || !email || !password || !ward_department || !role) {
+      return res.status(400).json({ message: "All fields are required" });
+    }
+
+    // Check if user exists
+    const existingUser = await usermodal.checkExistingUser(email);
+    if (existingUser) {
+      return res.status(400).json({ message: "User already exists" });
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Generate OTP
+    const otp = generateOTP();
+    const otpExpiry = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+    // Store in session (NOT in database yet)
+    req.session.pendingAuth = {
+      type: 'signup',
+      fullname,
+      email,
+      password: hashedPassword,
+      ward: role === 'citizen' ? ward_department : null,
+      department: role === 'staff' || role === 'admin' ? ward_department : null,
+      role,
+      otp,
+      otpExpiry
+    };
+
+    await req.session.save();
+
+    // Send OTP
+    await sendOTPEmail(email, otp);
+
+    return res.status(200).json({ 
+      message: "OTP sent to your email",
+      email // Send back email for UI display
+    });
+
+  } catch (err) {
+    console.error("❌ Signup error:", err);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+// ============================================
+// 2. LOGIN - Initial Step
+// ============================================
+const login = async (req, res) => {
+  try {
+    const { email, password, role } = req.body;
+
+    // Validation
+    if (!email || !password || !role) {
+      return res.status(400).json({ message: "All fields are required" });
+    }
+
+    // Check user credentials
+    const result = await usermodal.checkuser(email, password, role);
+    
+    if (!result.success) {
+      return res.status(401).json({ message: result.message });
+    }
+
+    // Generate OTP
+    const otp = generateOTP();
+    const otpExpiry = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+    // Store in session
+    req.session.pendingAuth = {
+      type: 'login',
+      userId: result.user.id,
+      email: result.user.email,
+      fullname: result.user.fullname,
+      role: result.user.role,
+      ward: result.user.ward,
+      department: result.user.department,
+      otp,
+      otpExpiry
+    };
+
+    await req.session.save();
+
+    // Send OTP
+    await sendOTPEmail(email, otp);
+
+    return res.status(200).json({ 
+      message: "OTP sent to your email",
+      email
+    });
+
+  } catch (err) {
+    console.error("❌ Login error:", err);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+// ============================================
+// 3. VERIFY OTP - Final Step (Both Signup & Login)
+// ============================================
+const verifyOTP = async (req, res) => {
+  try {
+    const { otp } = req.body;
+
+    // Check if pending auth exists
+    if (!req.session.pendingAuth) {
+      return res.status(401).json({ message: "No pending authentication" });
+    }
+
+    const { otp: storedOTP, otpExpiry, type } = req.session.pendingAuth;
+
+    // Verify OTP
+    if (otp !== storedOTP) {
+      return res.status(401).json({ message: "Invalid OTP" });
+    }
+
+    // Check expiry
+    if (Date.now() > otpExpiry) {
+      delete req.session.pendingAuth;
+      await req.session.save();
+      return res.status(401).json({ message: "OTP expired. Please try again." });
+    }
+
+    // ============================================
+    // SIGNUP: Create user in database
+    // ============================================
+    if (type === 'signup') {
+      const { fullname, email, password, ward, department, role } = req.session.pendingAuth;
+      
+      const newUser = await usermodal.createuser(
+        fullname,
+        email,
+        password, // Already hashed
+        role === 'citizen' ? ward : department,
+        role
+      );
+
+      // Set active session
+      req.session.userId = newUser.id;
+      req.session.email = newUser.email;
+      req.session.fullname = newUser.fullname;
+      req.session.role = newUser.role;
+      req.session.ward = newUser.ward;
+      req.session.department = newUser.department;
+    }
+    
+    // ============================================
+    // LOGIN: Activate session
+    // ============================================
+    else if (type === 'login') {
+      const { userId, email, fullname, role, ward, department } = req.session.pendingAuth;
+      
+      req.session.userId = userId;
+      req.session.email = email;
+      req.session.fullname = fullname;
+      req.session.role = role;
+      req.session.ward = ward;
+      req.session.department = department;
+    }
+
+    // Clear pending auth
+    delete req.session.pendingAuth;
+    
+    await req.session.save();
+
+    return res.status(200).json({
+      message: type === 'signup' ? "Account created successfully" : "Login successful",
+      user: {
+        id: req.session.userId,
+        email: req.session.email,
+        fullname: req.session.fullname,
+        role: req.session.role,
+        ward: req.session.ward,
+        department: req.session.department
+      }
+    });
+
+  } catch (err) {
+    console.error("❌ OTP verification error:", err);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+// ============================================
+// 4. RESEND OTP
+// ============================================
+const resendOTP = async (req, res) => {
+  try {
+    if (!req.session.pendingAuth) {
+      return res.status(401).json({ message: "No pending authentication" });
+    }
+
+    // Generate new OTP
+    const otp = generateOTP();
+    const otpExpiry = Date.now() + 10 * 60 * 1000;
+
+    req.session.pendingAuth.otp = otp;
+    req.session.pendingAuth.otpExpiry = otpExpiry;
+
+    await req.session.save();
+
+    // Send OTP
+    await sendOTPEmail(req.session.pendingAuth.email, otp);
+
+    return res.status(200).json({ message: "New OTP sent" });
+
+  } catch (err) {
+    console.error("❌ Resend OTP error:", err);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+// ============================================
+// 5. GET CURRENT USER
+// ============================================
+const getMe = async (req, res) => {
+  try {
+    if (!req.session.userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
+    return res.status(200).json({
+      id: req.session.userId,
+      role: req.session.role,
+      email: req.session.email,
+      fullname: req.session.fullname,
+      ward: req.session.ward,
+      department: req.session.department
+    });
+  } catch (err) {
+    console.error("❌ Error fetching user data:", err);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+// ============================================
+// 6. LOGOUT
+// ============================================
+const logout = async (req, res) => {
   req.session.destroy((err) => {
     if (err) {
       console.error("❌ Logout error:", err);
@@ -18,180 +294,11 @@ const handleLogout = async(req, res) => {
   });
 };
 
-const getMe = async(req, res) => {
-    try{
-        if(!req.session.userId){
-            return res.status(401).json({ message: "Not authenticated" });
-        }
-        return res.status(200).json({ 
-            id: req.session.userId,
-            role: req.session.role,
-            email: req.session.email,
-            fullname: req.session.fullname,
-            ward: req.session.ward,
-            department: req.session.department
-         });
-    }catch(err){
-        console.error("❌ Error fetching user data:", err);
-        return res.status(500).json({ message: "Internal server error" });
-    }
-}
-
-const getotp = async (req, res) => {
-  const loginData = req.body.email || req.session?.pendingUser?.email;
-
-  if (!loginData) {
-    return res.status(400).json({ success: false, message: "Email required" });
-  }
-
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
-
-  try {
-      await resend.emails.send({
-        from: 'onboarding@resend.dev',
-        to: loginData,
-        subject: "Login OTP",
-        html: `
-        <h1>Your OTP is <b>${otp}</b></h1>
-        <img style="width:300px" src="https://res.cloudinary.com/dooityhzp/image/upload/v1765341313/CiS_tpditl.jpg" />
-        <p>CitiSolve sends a secure, time-bound OTP.</p>
-        `,
-      });
-
-    console.log("OTP sent");
-    res.json({ success: true, message: "OTP sent",otp:otp });
-
-  } catch (err) {
-    console.error("EMAIL ERROR:", err);
-    res.status(500).json({ success: false, message: err.message });
-  }
+module.exports = {
+  signup,
+  login,
+  verifyOTP,
+  resendOTP,
+  getMe,
+  logout
 };
-
-
-const handlesubmit = async(req, res) => {
-    const { fullname, email, password, ward_department, role } = req.body;
-    console.log("🔍 Signup data received:", req.body)
-    try{
-        const data = await usermodal.checkExistingUser(email);
-        if(data){
-            return res.status(400).json({ message: "User already exists" });
-        }
-        let ward = null;
-        let department = null;
-        if (role==="citizen"){
-        ward = ward_department;
-        }
-        if (role==="staff"||role==="admin"){
-        department = ward_department;
-        }
-        
-        // ✅ Store in temporary session (not authenticated yet)
-        req.session.pendingUser = {
-            role: role,
-            email:email,
-            fullname:fullname,
-            ward: ward,
-            department: department
-        };
-        
-        console.log("🔍 Pending user stored in session:", req.sessionID);
-        return res.status(201).json({ 
-            message: "waiting for conformation"
-        });
-
-    }catch(err){
-        console.error("❌ Error checking user existence:", err);
-        return res.status(500).json({ message: "Internal server error" });
-    }
-}
-
-const handlelogin = async (req, res) => {
-  try {
-    const { email, password, role } = req.body;
-    console.log("🔍 Login data received:", req.body);
-
-    if (!email || !password || !role) {
-      return res.status(400).json({ message: "Email, password, and role are required" });
-    }
-
-    const data = await usermodal.checkuser(email, password, role);
-
-    if (!data.success) {
-      return res.status(data.status || 400).json({ message: data.message });
-    }
-
-    // ✅ Store in temporary session (not authenticated yet)
-    req.session.pendingUser = {
-        id: data.user.id,
-        role: data.user.role,
-        email: data.user.email,
-        fullname: data.user.fullname,
-        ward: data.user.ward,
-        department: data.user.department
-    };
-
-    console.log("✅ Pending user stored in session:", data.user.id);
-    return res.status(200).json({ 
-        message: "Login successful", 
-        data: data.user
-    });
-
-  } catch (err) {
-    console.error("❌ Error during login:", err);
-    return res.status(500).json({ message: "Internal server error" });
-  }
-};
-
-const setsessiondata = async(req, res) => {
-    try {
-        // ✅ Check if there's a pending user in session
-        if (!req.session.pendingUser) {
-            return res.status(401).json({ message: "No pending authentication. Please login again." });
-        }
-
-        // ✅ Move pending user to active session (OTP verified)
-        const pendingUser = req.session.pendingUser;
-        
-        req.session.userId = pendingUser.id;
-        req.session.role = pendingUser.role;
-        req.session.email = pendingUser.email;
-        req.session.fullname = pendingUser.fullname;
-        req.session.ward = pendingUser.ward;
-        req.session.department = pendingUser.department;
-
-        // ✅ Clear pending user
-        delete req.session.pendingUser;
-
-        // ✅ Save session explicitly
-        req.session.save((err) => {
-            if (err) {
-                console.error("❌ Error saving session:", err);
-                return res.status(500).json({ message: "Error saving session" });
-            }
-            console.log("✅ Session data set for user ID:", req.session.userId);
-            return res.status(200).json({ message: "Session data set successfully" });
-        });
-
-    } catch (err) {
-        console.error("❌ Error setting session data:", err);
-        return res.status(500).json({ message: "Internal server error" });
-    }
-}
-
-const createuser = async(req, res) => {
-    const { fullname, email,ward_department, role } = req.session.pendingUser;
-    const password = req.body.password;
-    try{
-    const newdata = await usermodal.createuser(fullname, email, password, ward_department, role);
-    req.session.pendingUser.id = newdata.id; // Store new user ID in pending session
-    return res.status(201).json({ 
-        message: "User created successfully",
-        user: newdata
-     });
-    }catch(err){
-        console.error("❌ Error creating user:", err);
-        return res.status(500).json({ message: "Internal server error" });
-    }
-}
-
-module.exports = {createuser,setsessiondata,handleLogout,handlelogin,handlesubmit,getotp,getMe}
