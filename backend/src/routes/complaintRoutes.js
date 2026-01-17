@@ -1,21 +1,19 @@
 // ============================================
-// routes/staffRoutes.js - FIXED
+// routes/complaintRoutes.js (Citizen) - FIXED
 // ============================================
 import express from 'express';
 import mongoose from 'mongoose';
 import { 
-  getStaffDashboard, 
-  getMyAssignedComplaints, 
-  getMyComplaintById,
-  updateComplaintStatus,
-  getMyProfile,
-  advancedSearch,
-  contactAdmin
-} from '../controllers/staffController.js';
-import { staffAuth } from '../middleware/staff.js';
+  submitComplaint, 
+  getComplaintById, 
+  getMyCitizensComplaints,
+  getCitizenAnalytics,
+} from '../controllers/complaintController.js';
 import { verifyToken } from '../middleware/auth.js';
+import { citizenAuth } from '../middleware/citizen.js';
+import { upload } from '../middleware/upload.js';
 
-const staffRouter = express.Router();
+const complaintRouter = express.Router();
 
 // ============================================
 // MIDDLEWARE: MongoDB ID Validator
@@ -26,7 +24,7 @@ const validateObjectId = (req, res, next) => {
   if (!mongoose.Types.ObjectId.isValid(id)) {
     return res.status(400).json({
       success: false,
-      message: 'Invalid ID format',
+      message: 'Invalid complaint ID format',
       error: 'INVALID_MONGODB_ID',
       providedId: id,
       hint: 'MongoDB ID must be a 24-character hexadecimal string'
@@ -44,58 +42,53 @@ const preventQueryId = (req, res, next) => {
     return res.status(400).json({
       success: false,
       message: "Invalid route format. Don't use ?id= in the URL",
-      hint: "Use /complaints/:id instead of /complaints?id=xxx",
-      correctExample: `/api/staff/complaints/${req.query.id}`
+      hint: "Use /:id instead of ?id=xxx",
+      correctExample: req.path.includes('analytics') 
+        ? `/api/complaints/${req.query.id}`
+        : req.path.includes('my-complaints')
+        ? `/api/complaints/${req.query.id}`
+        : `/api/complaints/${req.query.id}`
     });
   }
   next();
 };
 
 // Apply authentication to all routes
-staffRouter.use(verifyToken);
-staffRouter.use(staffAuth);
+complaintRouter.use(verifyToken);
+complaintRouter.use(citizenAuth);
 
 // ============================================
-// STAFF ROUTES
-// ============================================
-
-// Dashboard
-staffRouter.get('/dashboard', getStaffDashboard);
-
-// Profile
-staffRouter.get('/profile', getMyProfile);
-
-// Contact Admin
-staffRouter.post('/contact-admin', contactAdmin);
-
-// ============================================
-// COMPLAINTS ROUTES
+// COMPLAINT ROUTES
 // CRITICAL: Specific routes BEFORE :id routes!
 // ============================================
 
-// Advanced Search - MUST come before /complaints/:id
-staffRouter.post('/complaints/search/advanced', advancedSearch);
+// Analytics - MUST come before /:id
+complaintRouter.get('/analytics/all', getCitizenAnalytics);
 
-// Get all my complaints
-staffRouter.get('/complaints', preventQueryId, getMyAssignedComplaints);
+// Get my complaints - MUST come before /:id
+complaintRouter.get('/my-complaints', preventQueryId, getMyCitizensComplaints);
 
-// Update complaint status - MUST come before /complaints/:id
-staffRouter.put('/complaints/:id/status', validateObjectId, updateComplaintStatus);
+// Submit complaint with image upload
+complaintRouter.post(
+  '/submit',
+  upload.array('images', 5),
+  submitComplaint
+);
 
 // Get single complaint - MUST be LAST
-staffRouter.get('/complaints/:id', validateObjectId, getMyComplaintById);
+complaintRouter.get('/:id', validateObjectId, getComplaintById);
 
 // ============================================
 // 404 HANDLER
 // ============================================
-staffRouter.use((req, res) => {
+complaintRouter.use((req, res) => {
   res.status(404).json({
     success: false,
-    message: "Staff route not found",
+    message: "Complaint route not found",
     requestedPath: req.path,
     method: req.method,
     hint: "Check the API documentation for valid routes"
   });
 });
 
-export default staffRouter;
+export default complaintRouter;

@@ -1,15 +1,38 @@
-const express = require("express");
-const isAuthenticated = require("../middleware/authmiddleware.js");
-const citizencontrollers = require("../controllers/citizencontrollers.js");
-const multer = require("multer");
+import express from "express";
+import isAuthenticated from "../middleware/authmiddleware.js";
+import citizencontrollers from "../controllers/citizencontrollers.js";
+import multer from "multer";
+
 const upload = multer();
+const router = express.Router();
 
-const router = express.Router()
+// app.js or server.js
+import { multerErrorHandler } from './middleware/errorHandler.js';
 
+// ... your routes ...
+// Submit a new complaint (Citizen only)
+complaintRouter.post(
+  '/submit', 
+  verifyToken,
+  citizenAuth,
+  upload.array('images', 5),  // ✅ ADD THIS for image upload
+  submitComplaint
+);
 
-router.get("/citizen/complaints/data" ,isAuthenticated, citizencontrollers.getcomplaintstatsforuser);
-router.get("/complaints",isAuthenticated,citizencontrollers.getcomplaintsforuser);
-router.post("/submit", upload.single("image"),isAuthenticated,citizencontrollers.submitcomplaint);
-router.post("/complaints/delete", isAuthenticated, citizencontrollers.deletecomplaint);
+// Get all complaints by logged-in citizen
+complaintRouter.get(
+  '/my-complaints', 
+  verifyToken,
+  citizenAuth,
+  getMyCitizensComplaints
+);
 
-module.exports=router;
+// Get single complaint by ID (Citizen - own complaints only)
+complaintRouter.get(
+  '/:id', 
+  verifyToken,
+  citizenAuth,
+  getComplaintById
+);
+
+app.use(multerErrorHandler); // ← Add after routes
