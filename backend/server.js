@@ -10,7 +10,7 @@ import complaintRouter from './src/routes/complaintRoutes.js';
 import supportRouter from './src/routes/supportRoutes.js';
 import { multerErrorHandler } from './src/middleware/errorhandler.js';
 import staffRouter from './src/routes/staffroutes.js'
-import adminRouter from './src/routes/adminRoutes.js'
+import adminRouter from './src/routes/adminroutes.js'
 
 mongoose.connect("mongodb://localhost:27017/CitiSolve"),{
     useNewUrlParser: true,
