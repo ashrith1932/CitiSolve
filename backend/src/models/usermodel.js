@@ -25,11 +25,11 @@ const userSchema = new mongoose.Schema({
     
   state: { 
     type: String, 
-    required: function() { return this.role === 'staff'; }  // ✅ Now matches enum
+    required: function() { return this.role === 'staff' || this.role=='admin'; }  // ✅ Now matches enum
   },
   district: { 
     type: String, 
-    required: function() { return this.role === 'staff'; }  // ✅ Now matches enum
+    required: function() { return this.role === 'staff' || this.role=='admin'; }  // ✅ Now matches enum
   },
   department: {
     type: String,
