@@ -19,8 +19,6 @@ export const adminAuth = async (req, res, next) => {
         
 
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        
-           // ✅ CHECK ROLE FIRST (faster)
         if (decoded.role !== 'admin') {
             return res.status(403).json({
                 success: false,
@@ -49,7 +47,8 @@ export const adminAuth = async (req, res, next) => {
         req.userId = decoded.id;
         req.userRole = decoded.role;
         req.user = user;
-        
+        req.state = user.state;
+        req.district = user.district;
         next();
         
     } catch (error) {
