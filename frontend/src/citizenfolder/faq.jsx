@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styles from "./complaintstyle.module.css";
+import { useCitizenPortal } from "./hooks/home.jsx";
 
 const FAQ = () => {
   const navigate = useNavigate();
@@ -8,7 +9,31 @@ const FAQ = () => {
   const [loading, setLoading] = useState(true);
   const [sidebarActive, setSidebarActive] = useState(false);
   const [openIndex, setOpenIndex] = useState(null);
+  const {
+      fetchProfile,
+      logoutCitizen
+  } = useCitizenPortal();
 
+  useEffect(() => {
+  const initData = async () => {
+    try {
+      const userData = await fetchProfile();
+
+      if (userData) {
+        setUser(userData);
+      } else {
+        navigate("/");
+      }
+    } catch (err) {
+      console.error("Profile fetch failed:", err);
+      navigate("/");
+    } finally {
+      setLoading(false); // ✅ THIS WAS MISSING
+    }
+  };
+
+  initData();
+  }, [navigate]);
   const faqs = [
     {
       question: "How do I submit a complaint?",
@@ -44,30 +69,6 @@ const FAQ = () => {
     }
   ];
 
-  // Fetch user from session
-  useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        const res = await fetch(import.meta.env.VITE_BACKEND_URL+'/api/auth/me', {
-          credentials: 'include',
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          setUser(data);
-        } else {
-          navigate('/');
-        }
-      } catch (err) {
-        console.error('Error fetching user:', err);
-        navigate('/');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchUser();
-  }, [navigate]);
 
   const toggleSidebar = () => setSidebarActive(!sidebarActive);
 
@@ -82,15 +83,8 @@ const FAQ = () => {
   }, [sidebarActive]);
 
   const handleLogout = async () => {
-    try {
-      await fetch(import.meta.env.VITE_BACKEND_URL+'/api/auth/logout', {
-        method: 'POST',
-        credentials: 'include',
-      });
-      navigate('/');
-    } catch (err) {
-      navigate('/');
-    }
+    await logoutCitizen();
+    navigate('/');
   };
 
   if (loading) return <div className={styles.loading}>Loading...</div>;
@@ -124,12 +118,11 @@ const FAQ = () => {
         <div className={styles.profilesymbol} onClick={() => {
           document.querySelector(`.${styles.profiledropdown}`).classList.toggle(styles.show);
         }}>
-          {user.fullname?.charAt(0).toUpperCase()}
+          {user.name?.charAt(0).toUpperCase()}
         </div>
         <div className={styles.profiledropdown}>
-          <p><strong>Name: </strong>{user.fullname}</p>
+          <p><strong>Name: </strong>{user.name}</p>
           <p><strong>Email: </strong>{user.email}</p>
-          <p><strong>Ward: </strong>{user.ward}</p>
           <p><div className={styles.logout} onClick={handleLogout}>
                         Logout
                       </div></p>

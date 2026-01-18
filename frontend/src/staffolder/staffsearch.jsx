@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styles from './staffsearchstyle.module.css';
+import { useStaffSearch } from './hooks/staffsearchhook.jsx';
 
 const Loader = () => (
   <div className={styles.complaintsListLoader}>
@@ -10,8 +11,20 @@ const Loader = () => (
 );
 
 const SearchStaff = () => {
+  const navigate = useNavigate();
+  
+  // Destructure logic from the hook
+  const {
+    loading: hookLoading,
+    fetchProfile,
+    fetchAllComplaints,
+    advancedSearch,
+    fetchComplaintById,
+    updateComplaintStatus,
+    logoutStaff,
+  } = useStaffSearch();
+
   const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const [complaintsData, setComplaintsData] = useState([]);
@@ -28,9 +41,7 @@ const SearchStaff = () => {
   const [showDetailPage, setShowDetailPage] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const [isUpdateButtonDisabled, setIsUpdateButtonDisabled] = useState(false);
-  const [complaintsLoading, setComplaintsLoading] = useState(false);
   
-  const navigate = useNavigate();
   const sidebarRef = useRef(null);
   const menuIconRef = useRef(null);
   
@@ -43,64 +54,65 @@ const SearchStaff = () => {
   };
 
   const handleLogout = async () => {
-    try {
-      await fetch(import.meta.env.VITE_BACKEND_URL+'/api/auth/logout', {
-        method: 'POST',
-        credentials: 'include',
-      });
-      navigate('/');
-    } catch (err) {
-      console.error('Logout error:', err);
-      navigate('/');
-    }
+    await logoutStaff();
+    navigate('/');
   };
 
-  const fetchComplaints = async () => {
-    setComplaintsLoading(true);
-    try {
-      const res = await fetch(import.meta.env.VITE_BACKEND_URL+'/api/auth/staff/complaints', {
-        credentials: 'include',
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setComplaintsData(data.complaints);
-        setSearchResults(data.complaints);
-      } else {
-        console.error('Failed to fetch complaints.');
-      }
-    } catch (err) {
-      console.error('Error fetching complaints:', err);
-    } finally {
-      setComplaintsLoading(false);
-    }
-  };
-
+  /* =========================
+     INITIAL DATA FETCH
+  ========================= */
   useEffect(() => {
-    const fetchUserAndComplaints = async () => {
-      setLoading(true);
-      try {
-        const resUser = await fetch(import.meta.env.VITE_BACKEND_URL+'/api/auth/me', {
-          credentials: 'include',
-        });
+    const initData = async () => {
+      // 1. Fetch Staff Profile
+      const userData = await fetchProfile();
+      
+      if (userData) {
+        console.log('✅ Staff data fetched:', userData);
+        setUser(userData);
 
-        if (resUser.ok) {
-          const userData = await resUser.json();
-          setUser(userData);
-          await fetchComplaints();
-        } else {
-          navigate('/');
+        // 2. Fetch All Complaints
+        console.log('📋 Fetching all complaints...');
+        const complaints = await fetchAllComplaints();
+        
+        if (complaints) {
+          console.log('✅ Complaints received:', complaints);
+          // Transform backend data
+          const transformedComplaints = complaints.map(c => ({
+            id: c._id,
+            title: c.title,
+            description: c.description,
+            category: c.category,
+            location: c.landmark || c.location || 'N/A',
+            priority: c.priority || 'medium',
+            status: c.status === 'in-progress' ? 'progress' : c.status === 'assigned' ? 'pending' : c.status,
+            date: new Date(c.createdAt).toLocaleDateString('en-US', {
+              year: 'numeric',
+              month: 'short',
+              day: 'numeric',
+            }),
+            rawDate: c.createdAt, // Keep for filtering
+            citizen: c.citizen,
+            assignedBy: c.assignedBy,
+            comment: c.comment,
+            resolutionNote: c.resolutionNote,
+            resolvedAt: c.resolvedAt,
+            startedAt: c.startedAt,
+          }));
+          setComplaintsData(transformedComplaints);
+          setSearchResults(transformedComplaints);
         }
-      } catch (err) {
-        console.error('Error fetching user:', err);
+      } else {
+        console.log('❌ Staff not authenticated');
         navigate('/');
-      } finally {
-        setLoading(false);
       }
     };
 
-    fetchUserAndComplaints();
+    initData();
   }, [navigate]);
 
+  /* =========================
+     HANDLE CLICKS OUTSIDE
+  ========================= */
   useEffect(() => {
     const handleOutsideClick = (event) => {
       if (isProfileDropdownOpen && !event.target.closest(`.${styles.profileDropdown}`) && !event.target.closest(`.${styles.profileSymbol}`)) {
@@ -118,6 +130,9 @@ const SearchStaff = () => {
     };
   }, [isProfileDropdownOpen, isSidebarOpen]);
 
+  /* =========================
+     HANDLE FILTER CHANGES
+  ========================= */
   const handleInputChange = (e) => {
     const { id, value } = e.target;
     
@@ -138,77 +153,70 @@ const SearchStaff = () => {
     }
   };
 
-  const parseIndianDate = (dateStr) => {
-    if (!dateStr || typeof dateStr !== 'string') return null;
+  /* =========================
+     CLIENT-SIDE FILTERING
+     (Filters local data by priority)
+  ========================= */
+  const filterLocalResults = (results) => {
+    let filtered = [...results];
     
-    if (dateStr.includes('/')) {
-      const parts = dateStr.split('/');
-      if (parts.length !== 3) return null;
-      
-      const day = parseInt(parts[0], 10);
-      const month = parseInt(parts[1], 10) - 1;
-      const year = parseInt(parts[2], 10);
-      
-      if (isNaN(day) || isNaN(month) || isNaN(year)) return null;
-      
-      return new Date(year, month, day);
+    // Client-side priority filtering
+    if (searchFilters.priority) {
+      filtered = filtered.filter(c => 
+        c.priority && c.priority.toLowerCase() === searchFilters.priority.toLowerCase()
+      );
     }
     
-    const parsed = new Date(dateStr);
-    return isNaN(parsed.getTime()) ? null : parsed;
+    return filtered;
   };
 
-  const handleSearch = () => {
-    let results = [...complaintsData];
-    const { dateFrom, dateTo, status, priority, keyword } = searchFilters;
+  /* =========================
+     SEARCH HANDLER
+     (Uses advanced search API for server-side filtering)
+  ========================= */
+  const handleSearch = async () => {
+    const { dateFrom, dateTo, status, keyword } = searchFilters;
 
-    if (dateFrom) {
-      const fromDate = new Date(dateFrom);
-      fromDate.setHours(0, 0, 0, 0);
-      
-      results = results.filter(c => {
-        const complaintDate = parseIndianDate(c.date);
-        if (!complaintDate) {
-          return false;
-        }
-        complaintDate.setHours(0, 0, 0, 0);
-        return complaintDate >= fromDate;
-      });
-    }
+    // Use advanced search API
+    const searchParams = {
+      dateFrom: dateFrom || null,
+      dateTo: dateTo || null,
+      status: status || 'all',
+      keyword: keyword.trim() || '',
+      page: 1,
+      limit: 100,
+    };
+
+    const result = await advancedSearch(searchParams);
     
-    if (dateTo) {
-      const toDate = new Date(dateTo);
-      toDate.setHours(23, 59, 59, 999);
+    if (result.complaints) {
+      // Transform results
+      const transformedComplaints = result.complaints.map(c => ({
+        id: c._id,
+        title: c.title,
+        description: c.description,
+        category: c.category,
+        location: c.landmark || c.location || 'N/A',
+        priority: c.priority || 'medium',
+        status: c.status === 'in-progress' ? 'progress' : c.status === 'assigned' ? 'pending' : c.status,
+        date: new Date(c.createdAt).toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+        }),
+        rawDate: c.createdAt,
+        citizen: c.citizen,
+        assignedBy: c.assignedBy,
+        comment: c.comment,
+        resolutionNote: c.resolutionNote,
+        resolvedAt: c.resolvedAt,
+        startedAt: c.startedAt,
+      }));
       
-      results = results.filter(c => {
-        const complaintDate = parseIndianDate(c.date);
-        if (!complaintDate) return false;
-        return complaintDate <= toDate;
-      });
+      // Apply client-side priority filter
+      const filteredResults = filterLocalResults(transformedComplaints);
+      setSearchResults(filteredResults);
     }
-
-    if (status.trim()) {
-      results = results.filter(c => 
-        c.status && c.status.toLowerCase().includes(status.toLowerCase().trim())
-      );
-    }
-
-    if (priority) {
-      results = results.filter(c => 
-        c.priority && c.priority.toLowerCase() === priority.toLowerCase()
-      );
-    }
-
-    if (keyword.trim()) {
-      const lowerKeyword = keyword.toLowerCase().trim();
-      results = results.filter(c =>
-        (c.title && c.title.toLowerCase().includes(lowerKeyword)) ||
-        (c.description && c.description.toLowerCase().includes(lowerKeyword)) ||
-        (c.location && c.location.toLowerCase().includes(lowerKeyword))
-      );
-    }
-    
-    setSearchResults(results);
   };
 
   const handleClearFilters = () => {
@@ -228,8 +236,39 @@ const SearchStaff = () => {
     }
   };
 
-  const handleComplaintClick = (complaint) => {
-    setSelectedComplaint(complaint);
+  /* =========================
+     COMPLAINT DETAIL HANDLERS
+  ========================= */
+  const handleComplaintClick = async (complaint) => {
+    // Fetch fresh complaint data
+    const freshComplaint = await fetchComplaintById(complaint.id);
+    
+    if (freshComplaint) {
+      const transformedComplaint = {
+        id: freshComplaint._id,
+        title: freshComplaint.title,
+        description: freshComplaint.description,
+        category: freshComplaint.category,
+        location: freshComplaint.landmark || freshComplaint.location || 'N/A',
+        priority: freshComplaint.priority || 'medium',
+        status: freshComplaint.status === 'in-progress' ? 'progress' : freshComplaint.status === 'assigned' ? 'pending' : freshComplaint.status,
+        date: new Date(freshComplaint.createdAt).toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+        }),
+        citizen: freshComplaint.citizen,
+        assignedBy: freshComplaint.assignedBy,
+        comment: freshComplaint.comment,
+        resolutionNote: freshComplaint.resolutionNote,
+        resolvedAt: freshComplaint.resolvedAt,
+        startedAt: freshComplaint.startedAt,
+      };
+      setSelectedComplaint(transformedComplaint);
+    } else {
+      setSelectedComplaint(complaint);
+    }
+    
     setShowDetailPage(true);
     setIsUpdateButtonDisabled(complaint.status === 'resolved');
   };
@@ -242,6 +281,12 @@ const SearchStaff = () => {
 
   const handleUpdateStatus = async () => {
     const newStatus = document.getElementById('updateStatus').value;
+    const statusMap = {
+      'pending': 'assigned',
+      'progress': 'in-progress',
+      'resolved': 'resolved',
+    };
+    const backendStatus = statusMap[newStatus] || newStatus;
     const isCurrentlyResolved = selectedComplaint.status === 'resolved';
 
     if (isCurrentlyResolved && newStatus !== 'resolved') {
@@ -250,27 +295,58 @@ const SearchStaff = () => {
     }
 
     if (newStatus === 'resolved' && !isCurrentlyResolved) {
-      const confirmed = window.confirm('Are you sure you want to set this complaint to "Resolved"? This action cannot be undone.');
-      if (!confirmed) {
-          return;
+      const resolutionNote = prompt('Please provide a resolution note (required, min 10 characters):');
+      
+      if (!resolutionNote) {
+        alert('Resolution note is required to mark as resolved');
+        return;
       }
-    }
+      
+      if (resolutionNote.trim().length < 10) {
+        alert('Resolution note must be at least 10 characters');
+        return;
+      }
 
-    setComplaintsLoading(true);
-    try {
-      const res = await fetch(
-        import.meta.env.VITE_BACKEND_URL+`/api/auth/staff/complaints/${selectedComplaint.id}`,
-        {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          credentials: 'include',
-          body: JSON.stringify({ status: newStatus }),
-        }
+      const confirmed = window.confirm(
+        'Are you sure you want to set this complaint to "Resolved"? This action cannot be undone.'
       );
+      
+      if (!confirmed) {
+        return;
+      }
 
-      if (res.ok) {
+      // Update with resolution note
+      const result = await updateComplaintStatus(selectedComplaint.id, {
+        status: backendStatus,
+        resolutionNote: resolutionNote.trim(),
+      });
+
+      if (result.success) {
+        // Update local states
+        setComplaintsData((prev) =>
+          prev.map((c) =>
+            c.id === selectedComplaint.id ? { ...c, status: newStatus, resolutionNote: resolutionNote.trim() } : c
+          )
+        );
+        setSearchResults((prev) =>
+          prev.map((c) =>
+            c.id === selectedComplaint.id ? { ...c, status: newStatus, resolutionNote: resolutionNote.trim() } : c
+          )
+        );
+        setSelectedComplaint((prev) => ({ ...prev, status: newStatus, resolutionNote: resolutionNote.trim() }));
+        setSuccessMessage('Thank you for your cooperation in resolving this complaint.');
+        setIsUpdateButtonDisabled(true);
+        setTimeout(() => setSuccessMessage(''), 5000);
+      } else {
+        alert(result.error || 'Failed to update status');
+      }
+    } else {
+      // Update for other statuses
+      const result = await updateComplaintStatus(selectedComplaint.id, {
+        status: backendStatus,
+      });
+
+      if (result.success) {
         setComplaintsData((prev) =>
           prev.map((c) =>
             c.id === selectedComplaint.id ? { ...c, status: newStatus } : c
@@ -282,26 +358,18 @@ const SearchStaff = () => {
           )
         );
         setSelectedComplaint((prev) => ({ ...prev, status: newStatus }));
-
-        if (newStatus === 'resolved') {
-          setSuccessMessage('Thank you for your cooperation in resolving this complaint.');
-          setIsUpdateButtonDisabled(true);
-        } else {
-          setSuccessMessage('Status updated successfully!');
-          setIsUpdateButtonDisabled(false);
-        }
+        setSuccessMessage('Status updated successfully!');
+        setIsUpdateButtonDisabled(false);
         setTimeout(() => setSuccessMessage(''), 5000);
       } else {
-        alert('Failed to update status');
+        alert(result.error || 'Failed to update status');
       }
-    } catch (err) {
-      console.error('Update error:', err);
-      alert('Error updating status');
-    } finally {
-      setComplaintsLoading(false);
     }
   };
 
+  /* =========================
+     UTILITY FUNCTIONS
+  ========================= */
   const getStatusText = (status) => {
     return status === 'progress'
       ? 'In Progress'
@@ -309,18 +377,22 @@ const SearchStaff = () => {
   };
 
   const truncateDescription = (text, maxLength) => {
-    if (text.length <= maxLength) {
-      return text;
-    }
+    if (!text) return '';
+    if (text.length <= maxLength) return text;
     return text.substring(0, maxLength) + '...';
   };
 
-  if (loading) {
+  /* =========================
+     RENDERING
+  ========================= */
+
+  // Full Screen Loader
+  if (hookLoading && !user) {
     return <div className={styles.pageLoader}><div className={styles.loadingSpinner}></div><div>Loading...</div></div>;
   }
 
   if (!user) {
-    return <div className={styles.errorContainer}>Error: User not found. Redirecting...</div>;
+    return null;
   }
 
   return (
@@ -358,15 +430,16 @@ const SearchStaff = () => {
             <span>Advanced Search</span>
           </div>
           <div className={styles.profileSymbol} onClick={toggleProfileDropdown}>
-            {user.fullname ? user.fullname[0].toUpperCase() : 'S'}
+            {user.name ? user.name[0].toUpperCase() : 'S'}
           </div>
           <div className={`${styles.profileDropdown} ${isProfileDropdownOpen ? styles.open : ''}`}>
             <div>
               <strong>Staff Member</strong>
             </div>
-            <div>Name: {user.fullname}</div>
+            <div>Name: {user.name}</div>
             <div>Email: {user.email}</div>
             <div>Department: {user.department}</div>
+            <div>Location: {user.district}, {user.state}</div>
             <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #eee' }}>
               <a href="#" style={{ color: '#4a90e2', textDecoration: 'none' }}>
                 Settings
@@ -424,9 +497,10 @@ const SearchStaff = () => {
                     value={searchFilters.status}
                   >
                     <option value="">All</option>
-                    <option value="pending">Pending</option>
+                    <option value="assigned">Assigned</option>
+                    <option value="in-progress">In Progress</option>
                     <option value="resolved">Resolved</option>
-                    <option value="progress">In Progress</option>
+                    <option value="rejected">Rejected</option>
                   </select>
                 </div>
                 
@@ -471,7 +545,7 @@ const SearchStaff = () => {
                   Search Results ({searchResults.length} {searchResults.length === 1 ? 'complaint' : 'complaints'})
                 </div>
                 <div id="search-results-list">
-                  {complaintsLoading ? (
+                  {hookLoading ? (
                     <Loader />
                   ) : searchResults.length > 0 ? (
                     searchResults.map(complaint => {
@@ -527,7 +601,7 @@ const SearchStaff = () => {
             </>
           ) : (
             <div id="complaint-detail-page" className={styles.formCard}>
-              {complaintsLoading && <Loader />}
+              {hookLoading && <Loader />}
               <button className={styles.backButton} id="backToSearch" onClick={handleBackToList}>
                 ← Back to Search
               </button>
@@ -576,6 +650,20 @@ const SearchStaff = () => {
                     <div className={styles.detailField}>
                       <strong>Date:</strong> <div>{selectedComplaint.date}</div>
                     </div>
+                    {selectedComplaint.citizen && (
+                      <div className={styles.detailField}>
+                        <strong>Citizen:</strong>
+                        <div>{selectedComplaint.citizen.name} ({selectedComplaint.citizen.email})</div>
+                      </div>
+                    )}
+                    {selectedComplaint.resolutionNote && (
+                      <div className={styles.detailField}>
+                        <strong>Resolution Note:</strong>
+                        <div className={styles.detailDescription}>
+                          {selectedComplaint.resolutionNote}
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <div className={styles.updateStatusContainer}>
                     <select
@@ -584,7 +672,7 @@ const SearchStaff = () => {
                       defaultValue={selectedComplaint.status}
                       disabled={isUpdateButtonDisabled}
                     >
-                      <option value="pending">Pending</option>
+                      <option value="pending">Assigned</option>
                       <option value="progress">In Progress</option>
                       <option value="resolved">Resolved</option>
                     </select>
@@ -605,7 +693,10 @@ const SearchStaff = () => {
 
         <footer>
           Powered by CitiSolve Staff Portal |{' '}
-          <a href="/supportstaff" style={{ color: 'white', textDecoration: 'none' }}>
+          <a 
+            onClick={() => navigate('/staff/support')}
+            style={{ color: 'white', textDecoration: 'none', cursor: 'pointer' }}
+          >
             Contact Administrator
           </a>
         </footer>

@@ -1,28 +1,36 @@
 import React, { useState, useEffect } from 'react';
 import styles from './gueststyle.module.css';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from './useAuth'; // Adjust path if needed (assuming hooks/useAuth.js)
+import { useAuth } from './useAuth';
 
 const CitiSolveLanding = () => {
   const navigate = useNavigate();
-  const { 
-    signup, 
-    login, 
-    verifyOTP, 
-    resendOTP, 
-    loading, 
-    error, 
-    otpSent, 
-    setError 
+  const {
+  signupUser,
+  loginUser,
+  verifyOtp,
+  resendOTP,
+  loading,
+  error,
+  otpSent,
+  setError,
   } = useAuth();
+
 
   const [scrolled, setScrolled] = useState(false);
   const [activeFeature, setActiveFeature] = useState(0);
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [authMode, setAuthMode] = useState('signup');
   const [menuOpen, setMenuOpen] = useState(false);
   const [detail, setdetail] = useState("citizen");
   const [otp, setOtp] = useState(new Array(6).fill(""));
+  const [authMode, setAuthMode] = useState('login');
+
+  
+  // Location state for Staff signup
+  const [locationState, setLocationState] = useState("");
+  const [locationDistrict, setLocationDistrict] = useState("");
+  const [fetchingLocation, setFetchingLocation] = useState(false);
+  const [locationFetched, setLocationFetched] = useState(false);
 
   const handleotpchange = (e, index) => {
     if (isNaN(e.target.value)) return;
@@ -60,10 +68,63 @@ const CitiSolveLanding = () => {
   useEffect(() => {
     setError('');
     setdetail("citizen");
+    setLocationState("");
+    setLocationDistrict("");
+    setLocationFetched(false);
   }, [authMode, setError]);
 
+  // Fetch location using Geolocation API and reverse geocoding
+  const fetchLocation = async () => {
+    setFetchingLocation(true);
+    setError('');
+    
+    try {
+      // Get user's coordinates
+      const position = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0
+        });
+      });
+
+      const { latitude, longitude } = position.coords;
+
+      // Reverse geocoding using OpenStreetMap Nominatim
+      const response = await fetch(
+          `${import.meta.env.VITE_BACKEND_URL}/api/geocode/reverse?lat=${latitude}&lon=${longitude}`,{
+            credentials: 'include'
+          }
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch location details');
+      }
+
+      const data = await response.json();
+      const address = data.address || {};
+
+      // Extract state and district
+      const state = address.state || address.region || "";
+      const district = address.county || address.state_district || address.city || "";
+
+      setLocationState(state);
+      setLocationDistrict(district);
+      setLocationFetched(true);
+
+    } catch (err) {
+      console.error('Location fetch error:', err);
+      setError(err.message === 'User denied Geolocation' 
+        ? 'Location access denied. Please enable location permissions.'
+        : 'Failed to fetch location. Please try again or report to administrator.');
+      setLocationFetched(false);
+    } finally {
+      setFetchingLocation(false);
+    }
+  };
+
   const features = [
-    { icon: "📝", title: "Submit Complaints", description: "Report civic issues instantly with photos and location tracking" },
+    { icon: "📍", title: "Submit Complaints", description: "Report civic issues instantly with photos and location tracking" },
     { icon: "📊", title: "Track Progress", description: "Monitor your complaints in real-time with detailed status updates" },
     { icon: "🔔", title: "Get Notifications", description: "Stay informed with instant alerts on municipal updates and resolutions" },
     { icon: "📈", title: "Analytics Dashboard", description: "Access comprehensive data insights and community complaint trends" }
@@ -76,45 +137,45 @@ const CitiSolveLanding = () => {
     { number: "24/7", label: "Support Available" }
   ];
 
+  const buildSignupPayload = (formData) => {
+  return {
+    name: formData.get('fullname')?.trim(),
+    email: formData.get('email')?.trim(),
+    password: formData.get('password'),
+    role: detail,
+    ...(detail === 'staff' && {
+      department: formData.get('category'),
+      state: locationState,
+      district: locationDistrict,
+    }),
+  };
+  };
+
+
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
+    setError('');
+
     const formData = new FormData(e.target);
 
-    let userData = {};
     if (authMode === 'signup') {
-      userData = {
-        fullname: formData.get('fullname'),
-        email: formData.get('email'),
-        password: formData.get('password'),
-        ward_department: detail === "citizen" ? formData.get('ward') : formData.get('category'),
-        role: detail,
-      };
+      await signupUser(buildSignupPayload(formData));
     } else {
-      userData = {
-        email: formData.get('email'),
-        password: formData.get('password'),
-        role: detail,
-      };
+        await loginUser({
+          email: formData.get('email')?.trim(),
+          password: formData.get('password'),
+          role: detail,
+        });
     }
-
-    let result;
-    if (authMode === 'signup') {
-      result = await signup(userData);
-    } else {
-      result = await login(userData);
-    }
-
-    // On success, hook sets otpSent(true)
-    // On failure, hook sets error
   };
+
 
   const handleotp = async (e) => {
-    e.preventDefault();
-    const enteredOtp = otp.join("");
-    await verifyOTP(enteredOtp, detail);
-    // On success: hook navigates
-    // On failure: hook sets error
+  e.preventDefault();
+  const enteredOtp = otp.join("");
+  await verifyOtp(enteredOtp);
   };
+
 
   const handleclose = () => {
     setShowAuthModal(false);
@@ -192,6 +253,9 @@ const CitiSolveLanding = () => {
                 e.preventDefault();
                 setdetail("citizen");
                 setError('');
+                setLocationState("");
+                setLocationDistrict("");
+                setLocationFetched(false);
               }}>
                 <img src="/citizen.png" className={styles.profilesimg} alt="citizen" />
                 citizen
@@ -200,6 +264,9 @@ const CitiSolveLanding = () => {
                 e.preventDefault();
                 setdetail("staff");
                 setError('');
+                setLocationState("");
+                setLocationDistrict("");
+                setLocationFetched(false);
               }}>
                 <img src="/staff.png" className={styles.profilesimg} alt="staff" />
                 Staff
@@ -226,24 +293,92 @@ const CitiSolveLanding = () => {
                 <label className={styles.label}>Email</label>
                 <input type="email" name='email' className={styles.input} disabled={otpSent} placeholder="Enter your email" required />
               </div>
-              {authMode === 'signup' && detail === 'citizen' && (
-                <div className={styles.formGroup}>
-                  <label className={styles.label}>Ward/Zone</label>
-                  <input type="text" name='ward' className={styles.input} disabled={otpSent} placeholder="Enter your ward" required />
-                </div>
-              )}
               {authMode === 'signup' && detail === 'staff' && (
-                <div className={styles.formgroup}>
-                  <label htmlFor="complaint-category">Category *</label>
-                  <select id="complaint-category" name="category" disabled={otpSent} required>
-                    <option value="">Select a category</option>
-                    <option value="roads">🛣️ Roads & Infrastructure</option>
-                    <option value="water">💧 Water Supply</option>
-                    <option value="power">💡 Power & Electricity</option>
-                    <option value="sanitation">🗑️ Sanitation & Garbage</option>
-                    <option value="other">📋 Other</option>
-                  </select>
-                  <span className={styles.formerror}>Please select a category</span>
+                <div className={styles.formgroupright}>
+                  <div className={styles.formgroup}>
+                    <label htmlFor="complaint-category">Category *</label>
+                    <select id="complaint-category" name="category" disabled={otpSent} required>
+                      <option value="">Select a category</option>
+                      <option value="roads">🛣️ Roads & Infrastructure</option>
+                      <option value="water">💧 Water Supply</option>
+                      <option value="power">💡 Power & Electricity</option>
+                      <option value="sanitation">🗑️ Sanitation & Garbage</option>
+                      <option value="other">📋 Other</option>
+                    </select>
+                    <span className={styles.formerror}>Please select a category</span>
+                  </div>
+                  
+                  {!otpSent && (
+                    <div className={styles.formGroup} style={{ marginBottom: '1rem' }}>
+                      <button 
+                        type="button" 
+                        onClick={fetchLocation} 
+                        disabled={fetchingLocation}
+                        className={styles.submitBtn}
+                        style={{
+                          backgroundColor: locationFetched ? '#10b981' : '#667eea',
+                          opacity: fetchingLocation ? 0.7 : 1,
+                          cursor: fetchingLocation ? 'not-allowed' : 'pointer',
+                          marginBottom: '1rem'
+                        }}
+                      >
+                        {fetchingLocation ? (
+                          <>
+                            <div style={loaderStyles}></div>
+                            <span style={{ marginLeft: '8px' }}>Fetching Location...</span>
+                          </>
+                        ) : locationFetched ? (
+                          '✅ Location Fetched'
+                        ) : (
+                          '📍 Fetch Location (Required)'
+                        )}
+                      </button>
+                    </div>
+                  )}
+
+                  <div className={styles.formGroup}>
+                    <label className={styles.label}>State</label>
+                    <input 
+                      type="text" 
+                      name='state' 
+                      value={locationState}
+                      readOnly
+                      placeholder="Auto-filled from location"
+                      className={styles.input}
+                      style={{
+                        backgroundColor: '#f9fafb',
+                        color: '#6b7280',
+                        cursor: 'not-allowed'
+                      }}
+                    />
+                  </div>
+
+                  <div className={styles.formGroup}>
+                    <label className={styles.label}>District</label>
+                    <input 
+                      type="text" 
+                      name='district' 
+                      value={locationDistrict}
+                      readOnly
+                      placeholder="Auto-filled from location"
+                      className={styles.input}
+                      style={{
+                        backgroundColor: '#f9fafb',
+                        color: '#6b7280',
+                        cursor: 'not-allowed'
+                      }}
+                    />
+                    <p style={{
+                      fontSize: '12px',
+                      color: '#f59e0b',
+                      marginTop: '8px',
+                      fontStyle: 'italic',
+                      textAlign: 'center',
+                      backgroundColor: '#797770',
+                    }}>
+                      ⚠️ If the detected location is incorrect/failing, please report it to the administrator.
+                    </p>
+                  </div>
                 </div>
               )}
               <div className={styles.formGroup}>

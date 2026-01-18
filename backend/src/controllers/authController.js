@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken';
 import userModel from '../models/usermodel.js';
 import transporter from "../config/nodemailer.js";
 import { WELCOME_EMAIL_TEMPLATE, EMAIL_VERIFY_TEMPLATE, PASSWORD_RESET_TEMPLATE } from '../config/emailTemplates.js';
+import { sendLoginSuccessEmail } from '../utils/loginAlert.js';
 
 const sendWelcomeEmail = async (name, email, role) => {
     const mailOptions = {
@@ -215,7 +216,7 @@ export const verifySignupOtp = async (req, res) => {
         if (user.isAccountVerified) {
             return res.json({
                 success: false,
-                message: 'Account already verified'
+                message: 'Account already Exists and verified'
             });
         }
 
@@ -332,8 +333,7 @@ export const resendSignupOtp = async (req, res) => {
 // ========================================
 // LOGIN & LOGOUT
 // ========================================
-
-export const login = async (req, res) => {
+export const sendLoginOtp = async (req, res) => {
     const { email, password, role } = req.body;
 
     if (!email || !password || !role) {
@@ -346,7 +346,7 @@ export const login = async (req, res) => {
     try {
         const user = await userModel.findOne({ email });
 
-        if (!user) {
+        if (!user || user.role !== role) {
             return res.json({
                 success: false,
                 message: 'Invalid credentials'
@@ -363,7 +363,6 @@ export const login = async (req, res) => {
         }
 
         const isMatch = await bcrypt.compare(password, user.password);
-
         if (!isMatch) {
             return res.json({
                 success: false,
@@ -371,6 +370,87 @@ export const login = async (req, res) => {
             });
         }
 
+        const otp = String(Math.floor(100000 + Math.random() * 900000));
+
+        const hashedOtp = await bcrypt.hash(otp, 10);
+
+        user.verifyOtp = hashedOtp;
+        user.verifyOtpExpireAt = Date.now() + 10 * 60 * 1000;
+
+        await user.save();
+
+        const mailOptions = {
+            from: process.env.SENDER_EMAIL,
+            to: user.email,
+            subject: '🔐 Login OTP – Caravan Chronicle',
+            html: EMAIL_VERIFY_TEMPLATE
+                .replace('{{otp}}', otp)
+                .replace('{{name}}', user.name)
+                .replace('{{email}}', user.email)
+        };
+
+        await transporter.sendMail(mailOptions);
+
+        return res.json({
+            success: true,
+            message: 'Login OTP sent to your email',
+            userId: user._id
+        });
+
+    } catch (error) {
+        return res.json({
+            success: false,
+            message: error.message
+        });
+    }
+};
+
+export const verifyLoginOtp = async (req, res) => {
+    const { userId, otp } = req.body;
+
+    if (!userId || !otp) {
+        return res.json({
+            success: false,
+            message: 'User ID and OTP are required'
+        });
+    }
+
+    try {
+        const user = await userModel.findById(userId);
+
+        if (!user) {
+            return res.json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        if (user.loginOtpExpireAt < Date.now()) {
+            return res.json({
+            success: false,
+            message: 'OTP expired'
+        });
+        }
+
+        if (!user.verifyOtp || user.verifyOtpExpireAt < Date.now()) {
+            return res.json({
+                success: false,
+                message: 'OTP expired'
+            });
+        }
+
+        const isValidOtp = await bcrypt.compare(otp, user.verifyOtp);
+
+        if (!isValidOtp) {
+            return res.json({
+                success: false,
+                message: 'Invalid OTP'
+            });
+        }
+
+
+        user.verifyOtp = "";
+        user.verifyOtpExpireAt = 0;
         const accessToken = generateAccessToken(user._id, user.role);
         const refreshToken = generateRefreshToken(user._id, user.role);
 
@@ -389,19 +469,93 @@ export const login = async (req, res) => {
             response.dev_tokens = {
                 accessToken,
                 refreshToken,
-                note: "⚠️ Tokens in response are for DEVELOPMENT testing only. In production, use cookies."
+                note: '⚠️ Dev only — tokens via cookies in production'
             };
         }
+        await sendLoginSuccessEmail({
+            email: user.email,
+            name: user.name,
+            ip: req.ip
+        });
 
-        res.json(response);
+        return res.json(response);
 
     } catch (error) {
-        res.json({
+        return res.json({
             success: false,
             message: error.message
         });
     }
 };
+
+export const resendLoginOtp = async (req, res) => {
+    const { userId } = req.body;
+
+    if (!userId) {
+        return res.json({
+            success: false,
+            message: 'User ID is required'
+        });
+    }
+
+    try {
+        const user = await userModel.findById(userId);
+
+        if (!user) {
+            return res.json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        if (!user.isAccountVerified) {
+            return res.json({
+                success: false,
+                message: 'Account not verified'
+            });
+        }
+
+        // optional cooldown (60s)
+        if (
+            user.loginOtpExpireAt &&
+            user.loginOtpExpireAt > Date.now() - 60 * 1000
+        ) {
+            return res.json({
+                success: false,
+                message: 'Please wait before requesting a new OTP'
+            });
+        }
+
+        const otp = String(Math.floor(100000 + Math.random() * 900000));
+        const hashedOtp = await bcrypt.hash(otp, 10);
+
+        user.loginOtp = hashedOtp;
+        user.loginOtpExpireAt = Date.now() + 10 * 60 * 1000;
+        await user.save();
+
+        await transporter.sendMail({
+            from: process.env.SENDER_EMAIL,
+            to: user.email,
+            subject: '🔐 Login OTP – Caravan Chronicle',
+            html: EMAIL_VERIFY_TEMPLATE
+                .replace('{{otp}}', otp)
+                .replace('{{name}}', user.name)
+                .replace('{{email}}', user.email)
+        });
+
+        return res.json({
+            success: true,
+            message: 'New login OTP sent to email'
+        });
+
+    } catch (error) {
+        return res.json({
+            success: false,
+            message: error.message
+        });
+    }
+};
+
 
 export const logout = async (req, res) => {
     try {

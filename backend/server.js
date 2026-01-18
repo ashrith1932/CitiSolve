@@ -5,12 +5,13 @@ import mongoose from "mongoose";
 import fs from 'fs';
 import path from 'path';
 import cookieParser from "cookie-parser";
-import authRouter from "./src/routes/authRoutes.js";
+import authRouter from "./src/routes/authroutes.js";
 import complaintRouter from './src/routes/complaintRoutes.js';
 import supportRouter from './src/routes/supportRoutes.js';
 import { multerErrorHandler } from './src/middleware/errorhandler.js';
 import staffRouter from './src/routes/staffroutes.js'
 import adminRouter from './src/routes/adminroutes.js'
+import getlocation from "./src/routes/geocode.js";
 
 mongoose.connect("mongodb://localhost:27017/CitiSolve"),{
     useNewUrlParser: true,
@@ -25,23 +26,18 @@ if (!fs.existsSync(uploadsDir)) {
 }
 
 
-const corsOptions = {
-    origin: process.env.NODE_ENV === 'production' 
-        ? 'https://localhost:5173'  // Your frontend domain
-        : 'http://localhost:3000',   // Dev frontend
-    credentials: true,               // Allow cookies
-    optionsSuccessStatus: 200
-};
+const allowedOrigins = ["http://localhost:5173"];
 
-app.use(cors(corsOptions));
-
-const allowedOrigins = ['http://localhost:5173']
+app.use(cors({
+  origin: allowedOrigins,
+  credentials: true,
+}));
 
 app.use(express.json());
 app.use(cookieParser());
 app.use(cors({origin : allowedOrigins ,credentials: true }));
 app.use('/uploads', express.static('uploads'));
-
+app.use('/api/geocode',getlocation);
 app.use('/api/auth',authRouter);
 app.use('/api/complaints',complaintRouter);
 app.use('/api/support',supportRouter);

@@ -2,16 +2,28 @@
 import rateLimit from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
 // Login rate limiter - 5 attempts per 15 minutes
+import { sendTooManyLoginAttemptsEmail } from '../utils/loginAlert.js';
+
 export const loginLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100,
-    message: {
-        success: false,
-        message: 'Too many login attempts. Please try again after 15 minutes.'
-    },
-    standardHeaders: true,
-    legacyHeaders: false,
+    windowMs: 15 * 60 * 1000,
+    max: 100, // important
+    handler: async (req, res) => {
+
+        if (req.body?.email) {
+            await sendTooManyLoginAttemptsEmail({
+                email: req.body.email,
+                name: 'User',
+                ip: req.ip
+            });
+        }
+
+        res.status(429).json({
+            success: false,
+            message: 'Too many login attempts. Please try later.'
+        });
+    }
 });
+
 
 // OTP rate limiter - 3 attempts per hour
 export const otpLimiter = rateLimit({

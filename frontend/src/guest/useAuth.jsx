@@ -1,4 +1,3 @@
-// hooks/useAuth.js
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -6,148 +5,179 @@ const API_URL = import.meta.env.VITE_BACKEND_URL;
 
 export const useAuth = () => {
   const navigate = useNavigate();
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [otpSent, setOtpSent] = useState(false);
-  const [userEmail, setUserEmail] = useState('');
 
-  // ============================================
-  // 1. SIGNUP
-  // ============================================
-  const signup = async (formData) => {
+  const [pendingUserId, setPendingUserId] = useState(null);
+  const [authMode, setAuthMode] = useState(null); // 'signup' | 'login'
+
+  /* =========================
+     SIGNUP
+  ========================= */
+  const signupUser = async (payload) => {
     setLoading(true);
     setError('');
+    setAuthMode('signup');
 
     try {
-      const res = await fetch(`${API_URL}/api/auth/signup`, {
+      const res = await fetch(`${API_URL}/api/auth/send-signup-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
 
-      if (res.ok) {
-        setUserEmail(data.email);
-        setOtpSent(true);
-        return { success: true };
-      } else {
-        setError(data.message);
-        return { success: false, message: data.message };
+      if (!res.ok || data.success === false) {
+        setError(data.message || 'Signup failed');
+        return false;
       }
+
+      setPendingUserId(data.tempUserId);
+      setOtpSent(true);
+      return true;
     } catch (err) {
-      setError('Network error. Please try again.');
-      return { success: false, message: 'Network error' };
+      setError('Network error');
+      return false;
     } finally {
       setLoading(false);
     }
   };
 
-  // ============================================
-  // 2. LOGIN
-  // ============================================
-  const login = async (formData) => {
+  /* =========================
+     LOGIN
+  ========================= */
+  const loginUser = async (payload) => {
     setLoading(true);
     setError('');
+    setAuthMode('login');
 
     try {
-      const res = await fetch(`${API_URL}/api/auth/login`, {
+      const res = await fetch(`${API_URL}/api/auth/send-login-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
 
-      if (res.ok) {
-        setUserEmail(data.email);
-        setOtpSent(true);
-        return { success: true };
-      } else {
-        setError(data.message);
-        return { success: false, message: data.message };
+      if (!res.ok || data.success === false) {
+        setError(data.message || 'Login failed');
+        return false;
       }
+
+      setPendingUserId(data.userId);
+      setOtpSent(true);
+      return true;
     } catch (err) {
-      setError('Network error. Please try again.');
-      return { success: false, message: 'Network error' };
+      setError('Network error');
+      return false;
     } finally {
       setLoading(false);
     }
   };
 
-  // ============================================
-  // 3. VERIFY OTP
-  // ============================================
-  const verifyOTP = async (otp, role) => {
+  /* =========================
+     VERIFY OTP
+  ========================= */
+  const verifyOtp = async (otp) => {
     setLoading(true);
     setError('');
+    if (!pendingUserId) {
+    setError("OTP session expired. Please login again.");
+    return false;
+    }
+
+    const endpoint =
+      authMode === 'signup'
+        ? '/api/auth/verify-signup-otp'
+        : '/api/auth/verify-login-otp';
+
+    const payload =
+      authMode === 'signup'
+        ? { otp, tempUserId: pendingUserId }
+        : { otp, userId: pendingUserId };
 
     try {
-      const res = await fetch(`${API_URL}/api/auth/verify-otp`, {
+      const res = await fetch(`${API_URL}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ otp }),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
 
-      if (res.ok) {
-        // Navigate based on role
-        if (role === 'citizen') {
-          navigate('/citizen/home');
-        } else if (role === 'staff') {
-          navigate('/staff/home');
-        } else if (role === 'admin') {
-          navigate('/admin/home');
-        }
-        return { success: true };
-      } else {
-        setError(data.message);
-        return { success: false, message: data.message };
+      if (!res.ok || data.success === false) {
+        setError(data.message || 'OTP verification failed');
+        return false;
       }
+
+      // Backend returns role in user object
+      const role = data.user?.role;
+      if (role) {
+        navigate(`/${role}/home`);
+      } else {
+        navigate('/');
+      }
+
+      return true;
     } catch (err) {
-      setError('Network error. Please try again.');
-      return { success: false, message: 'Network error' };
+      setError('Network error');
+      return false;
     } finally {
       setLoading(false);
     }
   };
 
-  // ============================================
-  // 4. RESEND OTP
-  // ============================================
+  /* =========================
+     RESEND OTP
+  ========================= */
   const resendOTP = async () => {
     setLoading(true);
     setError('');
 
+    const endpoint =
+      authMode === 'signup'
+        ? '/api/auth/resend-signup-otp'
+        : '/api/auth/resend-login-otp';
+
+    const payload =
+      authMode === 'signup'
+        ? { tempUserId: pendingUserId }
+        : { userId: pendingUserId };
+
     try {
-      const res = await fetch(`${API_URL}/api/auth/resend-otp`, {
+      const res = await fetch(`${API_URL}${endpoint}`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
 
-      if (res.ok) {
-        return { success: true, message: data.message };
-      } else {
-        setError(data.message);
-        return { success: false, message: data.message };
+      if (!res.ok || data.success === false) {
+        setError(data.message || 'Failed to resend OTP');
+        return false;
       }
+
+      return true;
     } catch (err) {
-      setError('Network error. Please try again.');
-      return { success: false, message: 'Network error' };
+      setError('Network error');
+      return false;
     } finally {
       setLoading(false);
     }
   };
 
-  // ============================================
-  // 5. LOGOUT
-  // ============================================
+  /* =========================
+     LOGOUT
+  ========================= */
   const logout = async () => {
     try {
       await fetch(`${API_URL}/api/auth/logout`, {
@@ -155,41 +185,20 @@ export const useAuth = () => {
         credentials: 'include',
       });
       navigate('/');
-    } catch (err) {
-      console.error('Logout error:', err);
-    }
-  };
-
-  // ============================================
-  // 6. CHECK AUTH STATUS
-  // ============================================
-  const checkAuth = async () => {
-    try {
-      const res = await fetch(`${API_URL}/api/auth/me`, {
-        credentials: 'include',
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        return data;
-      }
-      return null;
-    } catch (err) {
-      return null;
+    } catch {
+      // silent fail
     }
   };
 
   return {
-    signup,
-    login,
-    verifyOTP,
+    signupUser,
+    loginUser,
+    verifyOtp,
     resendOTP,
     logout,
-    checkAuth,
     loading,
     error,
     otpSent,
-    userEmail,
     setError,
   };
 };

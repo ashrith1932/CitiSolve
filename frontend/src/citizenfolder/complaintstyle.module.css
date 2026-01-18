@@ -418,6 +418,8 @@
 .complaintlocation {
   display: flex;
   align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 8px;
   font-size: 18px;
   color: #606c38;
@@ -426,8 +428,8 @@
 
 .complaintfooter {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  align-items: start;
   padding-top: 16px;
   border-top: 1px solid #f0f0f0;
   flex-wrap: wrap;

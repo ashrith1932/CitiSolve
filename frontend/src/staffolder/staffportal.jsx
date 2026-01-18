@@ -1,20 +1,32 @@
 import React, { useEffect, useState } from 'react';
 import styles from './staffhome.module.css';
 import { useNavigate } from 'react-router-dom';
+import { useStaffPortal } from './hooks/staffportalhooks.jsx';
 
 const StaffPortal = () => {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [statsLoading, setStatsLoading] = useState(true); // State for stats loading
   const navigate = useNavigate();
+  
+  // Destructure logic from the hook
+  const { 
+    loading: hookLoading, 
+    fetchProfile, 
+    fetchDashboardStats, 
+    logoutStaff 
+  } = useStaffPortal();
+
+  const [user, setUser] = useState(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const [showOverlay, setShowOverlay] = useState(false);
+  
+  // Dashboard stats state
   const [complaintstats, setComplaintstats] = useState({
     total: 0,
-    pending: 0,
-    inprogress: 0,
+    assigned: 0,
+    inProgress: 0,
     resolved: 0,
+    rejected: 0,
+    active: 0,
   });
 
   const toggleSidebar = () => {
@@ -27,69 +39,42 @@ const StaffPortal = () => {
   };
 
   const handleLogout = async () => {
-    try {
-      await fetch(import.meta.env.VITE_BACKEND_URL+'/api/auth/logout', {
-        method: 'POST',
-        credentials: 'include',
-      });
-      navigate('/');
-    } catch (err) {
-      console.error('Logout error:', err);
-      navigate('/');
-    }
+    await logoutStaff();
+    navigate('/');
   };
 
+  /* =========================
+     INITIAL DATA FETCH
+  ========================= */
   useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        const res = await fetch(import.meta.env.VITE_BACKEND_URL+'/api/auth/me', {
-          credentials: 'include',
-        });
-        if (res.ok) {
-          const data = await res.json();
-          console.log('✅ User data fetched:', data);
-          setUser(data);
-        } else {
-          console.log('❌ User not authenticated');
-          navigate('/');
+    const initData = async () => {
+      // 1. Fetch Staff Profile
+      const userData = await fetchProfile();
+      
+      if (userData) {
+        console.log('✅ Staff data fetched:', userData);
+        setUser(userData);
+
+        // 2. Fetch Dashboard Stats
+        console.log('📊 Fetching dashboard stats...');
+        const statsData = await fetchDashboardStats();
+        
+        if (statsData) {
+          console.log('✅ Dashboard stats received:', statsData);
+          setComplaintstats(statsData);
         }
-      } catch (err) {
-        console.error('❌ Error fetching user:', err);
+      } else {
+        console.log('❌ Staff not authenticated');
         navigate('/');
-      } finally {
-        setLoading(false);
       }
     };
-    fetchUser();
-  }, [navigate]);
 
-  useEffect(() => {
-    if (!user) return;
-    const fetchComplaintstats = async () => {
-      setStatsLoading(true);
-      try {
-        const res = await fetch(import.meta.env.VITE_BACKEND_URL+'/api/auth/staff/complaints', {
-          credentials: 'include',
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setComplaintstats({
-            total: data.total,
-            pending: data.pending,
-            inprogress: data.inprogress,
-            resolved: data.resolved,
-          });
-          console.log('✅ Complaints data fetched:', data);
-        }
-      } catch (err) {
-        console.error('Error fetching complaints:', err);
-      } finally {
-        setStatsLoading(false);
-      }
-    };
-    fetchComplaintstats();
-  }, [user]);
+    initData();
+  }, [navigate]); // Runs once on mount
 
+  /* =========================
+     HANDLE CLICKS OUTSIDE
+  ========================= */
   useEffect(() => {
     const handleOutsideClick = (event) => {
       if (
@@ -114,23 +99,31 @@ const StaffPortal = () => {
     };
   }, [isProfileDropdownOpen, isSidebarOpen]);
 
-  if (loading) {
-    return <div>Loading...</div>;
-  }
+  /* =========================
+     RENDERING
+  ========================= */
 
-  if (!user) {
-    return <div>Error: User not found. Redirecting...</div>;
-  }
-
+  // Loading Skeleton Component
   const Loader = () => (
     <div className={styles.statLoader}>
       <div className={styles.loadingSpinner}></div>
     </div>
   );
 
+  // Full Screen Loader: Only show if we are loading AND we don't have a user yet
+  if (hookLoading && !user) {
+    return <div className={styles.fullLoading}>Loading...</div>;
+  }
+
+  // Safety check: If not loading but no user, return null (effect will redirect)
+  if (!user) {
+    return null;
+  }
+
   return (
     <div className={styles.mainContainer}>
       {showOverlay && <div className={styles.sidebarOverlay} onClick={toggleSidebar}></div>}
+      
       <div className={`${styles.sidebar} ${isSidebarOpen ? styles.open : ''}`} id="sidebar">
         <h2>CitiSolve Staff</h2>
         <a onClick={() => navigate('/staff/home')} className={`${styles.navLink} ${styles.active}`}>
@@ -152,6 +145,7 @@ const StaffPortal = () => {
           📖 User Guide
         </a>
       </div>
+
       <div className={styles.mainContent}>
         <div className={styles.topnav}>
           <div className={styles.menuIcon} id="menuToggle" onClick={toggleSidebar}>
@@ -161,7 +155,7 @@ const StaffPortal = () => {
             <span>Home</span>
           </div>
           <div className={styles.profileSymbol} id="profileSymbol" onClick={toggleProfileDropdown}>
-            {user.fullname ? user.fullname[0].toUpperCase() : 'S'}
+            {user.name ? user.name[0].toUpperCase() : 'S'}
           </div>
           <div
             className={`${styles.profileDropdown} ${isProfileDropdownOpen ? styles.open : ''}`}
@@ -169,7 +163,7 @@ const StaffPortal = () => {
           >
             <p>
               <strong>Name: </strong>
-              <span id="userName">{user.fullname}</span>
+              <span id="userName">{user.name}</span>
             </p>
             <p>
               <strong>Email: </strong>
@@ -178,6 +172,10 @@ const StaffPortal = () => {
             <p>
               <strong>Department: </strong>
               <span id="userDept">{user.department}</span>
+            </p>
+            <p>
+              <strong>Location: </strong>
+              <span id="userLocation">{user.district}, {user.state}</span>
             </p>
             <p>
               <strong>Role: </strong>
@@ -197,11 +195,13 @@ const StaffPortal = () => {
             </p>
           </div>
         </div>
+
         <div className={styles.content} id="home-page">
           <div className={styles.welcomeSection}>
-            <h1 id="welcomeText">Welcome {user.fullname ? user.fullname.split(' ')[0] : ''} 👋</h1>
+            <h1 id="welcomeText">Welcome {user.name ? user.name.split(' ')[0] : ''} 👋</h1>
             <p>Manage and resolve citizen complaints efficiently</p>
           </div>
+
           <div className={styles.mainGrid}>
             <div className={styles.leftPanel}>
               <div className={styles.quickLinks}>
@@ -215,47 +215,94 @@ const StaffPortal = () => {
                   📖 User Guide
                 </a>
               </div>
+
+              {/* DASHBOARD CARDS: Use hookLoading for skeleton state */}
               <div className={styles.dashboardCards}>
-                <button className={styles.stat}>
-                  {statsLoading ? <Loader /> : <span className={styles.statNumber} id="totalCount">{complaintstats.total}</span>}
-                  <span className={styles.statLabel}>Total Complaints</span>
+                <button className={`${styles.stat} ${hookLoading ? styles.loading : ''}`}>
+                  {hookLoading ? (
+                    <Loader />
+                  ) : (
+                    <span className={styles.statNumber} id="totalCount">{complaintstats.total}</span>
+                  )}
+                  <span className={styles.statLabel}>Total Assigned</span>
                   <div className={styles.statHoverLine}></div>
                 </button>
-                <button className={styles.stat}>
-                  {statsLoading ? <Loader /> : <span className={styles.statNumber} id="pendingCount">{complaintstats.pending}</span>}
-                  <span className={styles.statLabel}>Pending</span>
+
+                <button className={`${styles.stat} ${hookLoading ? styles.loading : ''}`}>
+                  {hookLoading ? (
+                    <Loader />
+                  ) : (
+                    <span className={styles.statNumber} id="assignedCount">{complaintstats.assigned}</span>
+                  )}
+                  <span className={styles.statLabel}>Assigned</span>
                   <div className={styles.statHoverLine}></div>
                 </button>
-                <button className={styles.stat}>
-                  {statsLoading ? <Loader /> : <span className={styles.statNumber} id="progressCount">{complaintstats.inprogress}</span>}
+
+                <button className={`${styles.stat} ${hookLoading ? styles.loading : ''}`}>
+                  {hookLoading ? (
+                    <Loader />
+                  ) : (
+                    <span className={styles.statNumber} id="progressCount">{complaintstats.inProgress}</span>
+                  )}
                   <span className={styles.statLabel}>In Progress</span>
                   <div className={styles.statHoverLine}></div>
                 </button>
-                <button className={styles.stat}>
-                  {statsLoading ? <Loader /> : <span className={styles.statNumber} id="resolvedCount">{complaintstats.resolved}</span>}
+
+                <button className={`${styles.stat} ${hookLoading ? styles.loading : ''}`}>
+                  {hookLoading ? (
+                    <Loader />
+                  ) : (
+                    <span className={styles.statNumber} id="resolvedCount">{complaintstats.resolved}</span>
+                  )}
                   <span className={styles.statLabel}>Resolved</span>
+                  <div className={styles.statHoverLine}></div>
+                </button>
+
+                <button className={`${styles.stat} ${hookLoading ? styles.loading : ''}`}>
+                  {hookLoading ? (
+                    <Loader />
+                  ) : (
+                    <span className={styles.statNumber} id="rejectedCount">{complaintstats.rejected}</span>
+                  )}
+                  <span className={styles.statLabel}>Rejected</span>
+                  <div className={styles.statHoverLine}></div>
+                </button>
+
+                <button className={`${styles.stat} ${hookLoading ? styles.loading : ''}`}>
+                  {hookLoading ? (
+                    <Loader />
+                  ) : (
+                    <span className={styles.statNumber} id="activeCount">{complaintstats.active}</span>
+                  )}
+                  <span className={styles.statLabel}>Active</span>
                   <div className={styles.statHoverLine}></div>
                 </button>
               </div>
             </div>
+
             <div className={styles.rightPanel}>
               <div className={styles.infoCard}>
                 <h3>📢 Recent Updates</h3>
                 <p id="recentUpdates">No Recent updates</p>
               </div>
+
               <div className={styles.infoCard}>
                 <h3>👤 Your Info</h3>
                 <p>
-                  <strong>id: </strong>
-                  <span id="infoName">{user.id}</span>
+                  <strong>ID: </strong>
+                  <span id="infoId">{user._id}</span>
                 </p>
                 <p>
                   <strong>Name: </strong>
-                  <span id="infoName">{user.fullname}</span>
+                  <span id="infoName">{user.name}</span>
                 </p>
                 <p>
                   <strong>Department: </strong>
                   <span id="infoDept">{user.department}</span>
+                </p>
+                <p>
+                  <strong>Location: </strong>
+                  <span id="infoLocation">{user.district}, {user.state}</span>
                 </p>
                 <p>
                   <strong>Email: </strong>
@@ -263,15 +310,42 @@ const StaffPortal = () => {
                 </p>
                 <p>
                   <strong>Role: </strong>
-                  <span id="infoEmail">{user.role}</span>
+                  <span id="infoRole">{user.role}</span>
                 </p>
               </div>
+
+              {/* Display Staff Stats if available */}
+              {user.stats && (
+                <div className={styles.infoCard}>
+                  <h3>📊 Performance Stats</h3>
+                  <p>
+                    <strong>Assigned: </strong>
+                    <span>{user.stats.assigned}</span>
+                  </p>
+                  <p>
+                    <strong>In Progress: </strong>
+                    <span>{user.stats.inProgress}</span>
+                  </p>
+                  <p>
+                    <strong>Resolved: </strong>
+                    <span>{user.stats.resolved}</span>
+                  </p>
+                  <p>
+                    <strong>Rejected: </strong>
+                    <span>{user.stats.rejected}</span>
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </div>
+
         <footer>
           Powered by CitiSolve Staff Portal |{' '}
-          <a href="/supportstaff" style={{ color: 'white', textDecoration: 'none' }}>
+          <a 
+            onClick={() => navigate('/staff/support')}
+            style={{ color: 'white', textDecoration: 'none', cursor: 'pointer' }}
+          >
             Contact Administrator
           </a>
         </footer>

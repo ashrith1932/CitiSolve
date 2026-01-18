@@ -1,35 +1,37 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import styles from "./complaintstyle.module.css";
+import { useCitizenPortal } from "./hooks/home.jsx";
 
 const UserGuide = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [user, setUser] = useState(null);
   const [sidebarActive, setSidebarActive] = useState(false);
+  const {
+        fetchProfile,
+        logoutCitizen
+    } = useCitizenPortal();
     useEffect(() => {
-      const fetchUser = async () => {
-        try {
-          const res = await fetch(import.meta.env.VITE_BACKEND_URL+'/api/auth/me', {
-            credentials: 'include',
-          });
-  
-          if (res.ok) {
-            const data = await res.json();
-            setUser(data);
-          } else {
-            navigate('/');
-          }
-        } catch (err) {
-          console.error('Error fetching user:', err);
-          navigate('/');
-        } finally {
-          setLoading(false);
-        }
-      };
-  
-      fetchUser();
-    }, [navigate]);
+    const initData = async () => {
+    try {
+      const userData = await fetchProfile();
+
+      if (userData) {
+        setUser(userData);
+      } else {
+        navigate("/");
+      }
+    } catch (err) {
+      console.error("Profile fetch failed:", err);
+      navigate("/");
+    } finally {
+      setLoading(false); // ✅ THIS WAS MISSING
+    }
+  };
+
+  initData();
+  }, [navigate]);
 
   const sections = [
     {
@@ -109,6 +111,7 @@ const UserGuide = () => {
   }, [sidebarActive]);
 
   const handleLogout = () => {
+    logoutCitizen();
     navigate("/");
   };
 
@@ -141,10 +144,10 @@ const UserGuide = () => {
         <div className={styles.profilesymbol} onClick={() => {
           document.querySelector(`.${styles.profiledropdown}`).classList.toggle(styles.show);
         }}>
-          {user.fullname?.charAt(0).toUpperCase()}
+          {user.name?.charAt(0).toUpperCase()}
         </div>
         <div className={styles.profiledropdown}>
-          <p><strong>Name: </strong>{user.fullname}</p>
+          <p><strong>Name: </strong>{user.name}</p>
           <p><strong>Email: </strong>{user.email}</p>
           <p><strong>Ward: </strong>{user.ward}</p>
           <p><div className={styles.logout} onClick={handleLogout}>
@@ -240,7 +243,7 @@ const UserGuide = () => {
               Submit Complaint
             </button>
             <button
-              onClick={() => navigate("/citizen/complaint")}
+              onClick={() => navigate("/citizen/complaints")}
               style={{
                 padding: "12px 16px",
                 background: "white",

@@ -179,6 +179,8 @@
 .profiledropdown p {
   margin: 8px 0;
   word-wrap: break-word;
+  border-bottom: 1px solid #959292;
+  font-size: 7px;
 }
 
 /* Content */
@@ -504,6 +506,10 @@ canvas {
 
 .footer a:hover {
   color: #dda15e;
+}
+
+.logout{
+  font-size: 10px;
 }
 
 /* Loading Animation */

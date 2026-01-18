@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styles from './stafffaqstyle.module.css';
+import { useStaffSupport } from './hooks/supportstaffhook.jsx';
 
 const faqData = [
   {
@@ -28,6 +29,7 @@ const FaqStaff = () => {
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState(null);
   const navigate = useNavigate();
+  const { fetchProfile,logoutStaff} = useStaffSupport();
   
   const sidebarRef = useRef(null);
   const menuIconRef = useRef(null);
@@ -45,41 +47,27 @@ const FaqStaff = () => {
   };
 
   const handleLogout = async () => {
-    try {
-      await fetch(import.meta.env.VITE_BACKEND_URL+'/api/auth/logout', {
-        method: 'POST',
-        credentials: 'include',
-      });
+      await logoutStaff();
       navigate('/');
-    } catch (err) {
-      console.error('Logout error:', err);
-      navigate('/');
-    }
-  };
-
-  useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        const res = await fetch(import.meta.env.VITE_BACKEND_URL+'/api/auth/me', {
-          credentials: 'include',
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          setUser(data);
-        } else {
-          navigate('/');
-        }
-      } catch (err) {
-        console.error('Error fetching user:', err);
-        navigate('/');
-      } finally {
-        setLoading(false);
-      }
     };
-
-    fetchUser();
-  }, [navigate]);
+  
+  useEffect(() => {
+        const initData = async () => {
+          // 1. Fetch User Profile
+          const userData = await fetchProfile();
+          
+          if (userData) {
+            console.log("✅ User data fetched:", userData);
+            setUser(userData);
+            setLoading(false);
+          } else {
+            console.log("❌ User not authenticated");
+            navigate("/");
+          }
+        };
+    
+        initData();
+    }, [navigate]);
 
   useEffect(() => {
     const handleOutsideClick = (event) => {

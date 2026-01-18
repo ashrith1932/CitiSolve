@@ -2,14 +2,25 @@ import React, { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import styles from "./citizenstyle.module.css";
 import Chart from "chart.js/auto";
+// Import the custom hook from home.jsx
+import { useCitizenPortal } from "./hooks/home.jsx";
 
 const CitizenPortal = () => {
   const navigate = useNavigate();
+  
+  // Destructure logic from the hook
+  const { 
+    loading: hookLoading, 
+    fetchProfile, 
+    fetchComplaintAnalytics, 
+    logoutCitizen 
+  } = useCitizenPortal();
+
   const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [complaintsLoading, setComplaintsLoading] = useState(true);
   const [sidebarActive, setSidebarActive] = useState(false);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
+  
+  // Default data structure matches the hook's expected response
   const [complaintsdata, setComplaintsData] = useState({
     totalcomplaints: 0,
     resolved: 0,
@@ -30,63 +41,64 @@ const CitizenPortal = () => {
     timeChart: null,
   });
 
-  // Fetch user from session when component mounts
+  /* =========================
+     INITIAL DATA FETCH
+  ========================= */
   useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        const res = await fetch(import.meta.env.VITE_BACKEND_URL+'/api/auth/me', {
-          credentials: 'include',
-        });
+    const initData = async () => {
+      // 1. Fetch User Profile
+      const userData = await fetchProfile();
+      
+      if (userData) {
+        console.log("✅ User data fetched:", userData);
+        setUser(userData);
 
-        if (res.ok) {
-          const data = await res.json();
-          console.log("✅ User data fetched:", data);
-          setUser(data);
-        } else {
-          console.log("❌ User not authenticated");
-          navigate('/');
-        }
-      } catch (err) {
-        console.error('❌ Error fetching user:', err);
-        navigate('/');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchUser();
-  }, [navigate]);
-
-  // Fetch complaints data when user is loaded
-  useEffect(() => {
-    if (!user) return;
-
-    const fetchComplaintsData = async () => {
-      setComplaintsLoading(true);
-      try {
+        // 2. Fetch Analytics (only if user exists)
         console.log("📊 Fetching complaints data...");
-        const res = await fetch(import.meta.env.VITE_BACKEND_URL+'/api/auth/citizen/complaints/data', {
-          credentials: 'include',
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          console.log("✅ Complaints data received:", data);
-          setComplaintsData(data);
-        } else {
-          console.error("❌ Failed to fetch complaints data");
+        const analyticsData = await fetchComplaintAnalytics();
+        
+        if (analyticsData) {
+          console.log("✅ Complaints data received:", analyticsData);
+          setComplaintsData(analyticsData);
         }
-      } catch (err) {
-        console.error('❌ Error fetching complaints data:', err);
-      } finally {
-        setComplaintsLoading(false);
+      } else {
+        console.log("❌ User not authenticated");
+        navigate("/");
       }
     };
 
-    fetchComplaintsData();
-  }, [user]);
+    initData();
+  }, [navigate]); // Empty dependency array ensures this runs once on mount
 
-  // Initialize event listeners and notices
+  /* =========================
+     CHARTS & UI LOGIC
+  ========================= */
+  
+  // Initialize/update charts when complaintsdata changes
+  useEffect(() => {
+    // Only initialize if we have data and we are not in the middle of a hard load
+    if (complaintsdata.totalcomplaints >= 0 && user) {
+      console.log("📈 Initializing charts with data:", complaintsdata);
+      initializeCharts();
+    }
+  }, [complaintsdata, user]);
+
+  // Handle clicks outside sidebar and profile dropdown
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (sidebarActive && !e.target.closest(`.${styles.sidebar}`) && !e.target.closest(`.${styles.menuicon}`)) {
+        setSidebarActive(false);
+      }
+      if (profileDropdownOpen && !e.target.closest(`.${styles.profilesymbol}`) && !e.target.closest(`.${styles.profiledropdown}`)) {
+        setProfileDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener("click", handleClickOutside);
+    return () => document.removeEventListener("click", handleClickOutside);
+  }, [sidebarActive, profileDropdownOpen]);
+
+  // Initialize event listeners (Search, Notices, Resize)
   useEffect(() => {
     if (!user) return;
 
@@ -123,7 +135,8 @@ const CitizenPortal = () => {
     };
 
     const handleSearch = () => {
-      const value = searchBox.value.toLowerCase();
+      const value = searchBox?.value.toLowerCase();
+      if (!value) return;
       document.querySelectorAll(`.${styles["complaint-card"]}`).forEach((card) => {
         card.style.display = card.textContent.toLowerCase().includes(value) ? "" : "none";
       });
@@ -147,7 +160,7 @@ const CitizenPortal = () => {
         if (window.innerWidth >= 1024) {
           setSidebarActive(false);
         }
-        // Resize charts
+        // Resize charts safely
         Object.values(chartRefs.current).forEach((chart) => {
           if (chart) chart.resize();
         });
@@ -163,55 +176,28 @@ const CitizenPortal = () => {
     };
   }, [user]);
 
-  // Initialize/update charts when complaintsdata changes
-  useEffect(() => {
-    if (complaintsdata.totalcomplaints >= 0) {
-      console.log("📈 Initializing charts with data:", complaintsdata);
-      initializeCharts();
-    }
-  }, [complaintsdata]);
-
-  // Handle clicks outside sidebar and profile dropdown
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (sidebarActive && !e.target.closest(`.${styles.sidebar}`) && !e.target.closest(`.${styles.menuicon}`)) {
-        setSidebarActive(false);
-      }
-      if (profileDropdownOpen && !e.target.closest(`.${styles.profilesymbol}`) && !e.target.closest(`.${styles.profiledropdown}`)) {
-        setProfileDropdownOpen(false);
-      }
-    };
-
-    document.addEventListener("click", handleClickOutside);
-    return () => document.removeEventListener("click", handleClickOutside);
-  }, [sidebarActive, profileDropdownOpen]);
-
   // Cleanup charts on unmount
   useEffect(() => {
     return () => {
       Object.values(chartRefs.current).forEach(chart => {
-        if (chart) {
-          chart.destroy();
-        }
+        if (chart) chart.destroy();
       });
     };
   }, []);
 
+  /* =========================
+     HANDLERS
+  ========================= */
+  
   const handleLogout = async () => {
-    try {
-      await fetch(import.meta.env.VITE_BACKEND_URL+'/api/auth/logout', {
-        method: 'POST',
-        credentials: 'include',
-      });
-      navigate('/');
-    } catch (err) {
-      console.error('Logout error:', err);
-      navigate('/');
-    }
+    await logoutCitizen();
+    navigate('/');
   };
 
   const initializeCharts = () => {
-    if (complaintsLoading) return;
+    // Prevent chart creation if data is missing or loading
+    if (!complaintsdata) return;
+
     // Destroy existing charts
     Object.keys(chartRefs.current).forEach(key => {
       if (chartRefs.current[key]) {
@@ -321,12 +307,19 @@ const CitizenPortal = () => {
     }
   };
 
-  if (loading) {
+  /* =========================
+     RENDERING
+  ========================= */
+
+  // Full Screen Loader: Only show if we are loading AND we don't have a user yet.
+  // This prevents the whole screen from going white if we are just refreshing stats.
+  if (hookLoading && !user) {
     return (
       <div className={styles.fullLoading} />
     );
   }
 
+  // Safety check: If not loading but no user, return null (effect will redirect)
   if (!user) {
     return null;
   }
@@ -348,22 +341,21 @@ const CitizenPortal = () => {
         <div className={styles.topnav}>
           <div className={styles.menuicon} onClick={(e) => { e.stopPropagation(); setSidebarActive(!sidebarActive); }}>☰</div>
           <div className={styles.profilesymbol} onClick={(e) => { e.stopPropagation(); setProfileDropdownOpen(!profileDropdownOpen); }}>
-            {user.fullname?.charAt(0).toUpperCase() || 'U'}
+            {user.name?.charAt(0).toUpperCase() || 'U'}
           </div>
           <div className={`${styles.profiledropdown} ${profileDropdownOpen ? styles.show : ''}`}>
             <p><strong>Id : {user.id}</strong></p>
-            <p><strong>{user.fullname}</strong></p>
-            <p>Email: {user.email}</p>
-            <p>Ward: {user.ward}</p>
-            <p style={{ marginTop: "12px", paddingTop: "12px", borderTop: "1px solid #eee" }}>
-              <div className = {styles.logout} onClick={handleLogout}>Logout</div>
-            </p>
+            <p><strong>Name : </strong>{user.name}</p>
+            <p><strong>Email :</strong>{user.email}</p>
+            <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: "1px solid #eee" }}>
+              <div className={styles.logout} onClick={handleLogout}>Logout</div>
+            </div>
           </div>
         </div>
 
         <div className={styles.content}>
           <div className={styles.welcomesection}>
-            <h1>Hi, {user.fullname} 👋</h1>
+            <h1>Hi, {user.name} 👋</h1>
             <p>What's bothering you today?</p>
           </div>
 
@@ -374,21 +366,22 @@ const CitizenPortal = () => {
                 <a onClick={() => navigate("/citizen/complaints")} className={styles.card}>📋 Track Complaints</a>
               </div>
 
+              {/* DASHBOARD CARDS: Use hookLoading for skeleton state */}
               <div className={styles.dashboardcards}>
-                <div className={`${styles.stat} ${styles["complaint-card"]} ${complaintsLoading ? styles.loading : ''}`} data-category="total">
-                  <span className={styles.statnumber}>{complaintsLoading ? <span style={{visibility: 'hidden'}}>88</span> : complaintsdata.totalcomplaints}</span>
+                <div className={`${styles.stat} ${styles["complaint-card"]} ${hookLoading ? styles.loading : ''}`} data-category="total">
+                  <span className={styles.statnumber}>{hookLoading ? <span style={{visibility: 'hidden'}}>00</span> : complaintsdata.totalcomplaints}</span>
                   <span className={styles.statlabel}>Total Complaints</span>
                 </div>
-                <div className={`${styles.stat} ${styles["complaint-card"]} ${complaintsLoading ? styles.loading : ''}`} data-category="resolved">
-                  <span className={styles.statnumber}>{complaintsLoading ? <span style={{visibility: 'hidden'}}>88</span> : complaintsdata.resolved}</span>
+                <div className={`${styles.stat} ${styles["complaint-card"]} ${hookLoading ? styles.loading : ''}`} data-category="resolved">
+                  <span className={styles.statnumber}>{hookLoading ? <span style={{visibility: 'hidden'}}>00</span> : complaintsdata.resolved}</span>
                   <span className={styles.statlabel}>Resolved</span>
                 </div>
-                <div className={`${styles.stat} ${styles["complaint-card"]} ${complaintsLoading ? styles.loading : ''}`} data-category="progress">
-                  <span className={styles.statnumber}>{complaintsLoading ? <span style={{visibility: 'hidden'}}>88</span> : complaintsdata.inprogress}</span>
+                <div className={`${styles.stat} ${styles["complaint-card"]} ${hookLoading ? styles.loading : ''}`} data-category="progress">
+                  <span className={styles.statnumber}>{hookLoading ? <span style={{visibility: 'hidden'}}>00</span> : complaintsdata.inprogress}</span>
                   <span className={styles.statlabel}>In Progress</span>
                 </div>
-                <div className={`${styles.stat} ${styles["complaint-card"]} ${complaintsLoading ? styles.loading : ''}`} data-category="pending">
-                  <span className={styles.statnumber}>{complaintsLoading ? <span style={{visibility: 'hidden'}}>88</span> : complaintsdata.pending}</span>
+                <div className={`${styles.stat} ${styles["complaint-card"]} ${hookLoading ? styles.loading : ''}`} data-category="pending">
+                  <span className={styles.statnumber}>{hookLoading ? <span style={{visibility: 'hidden'}}>00</span> : complaintsdata.pending}</span>
                   <span className={styles.statlabel}>Pending</span>
                 </div>
               </div>
@@ -396,13 +389,13 @@ const CitizenPortal = () => {
               <div className={styles.chartssection}>
                 <h2>📊 Analytics Dashboard</h2>
                 <div className={styles.chartsgrid}>
-                  <div className={`${styles.chartcontainer} ${complaintsLoading ? styles.loading : ''}`}>
+                  <div className={`${styles.chartcontainer} ${hookLoading ? styles.loading : ''}`}>
                     <h3>Complaint Status Distribution</h3>
-                    {complaintsLoading ? <div className={styles.placeholderCanvas} /> : <canvas id="statusChart"></canvas>}
+                    {hookLoading ? <div className={styles.placeholderCanvas} /> : <canvas id="statusChart"></canvas>}
                   </div>
-                  <div className={`${styles.chartcontainer} ${complaintsLoading ? styles.loading : ''}`}>
+                  <div className={`${styles.chartcontainer} ${hookLoading ? styles.loading : ''}`}>
                     <h3>Category Breakdown</h3>
-                    {complaintsLoading ? <div className={styles.placeholderCanvas} /> : <canvas id="categoryChart"></canvas>}
+                    {hookLoading ? <div className={styles.placeholderCanvas} /> : <canvas id="categoryChart"></canvas>}
                   </div>
                 </div>
               </div>
@@ -421,15 +414,14 @@ const CitizenPortal = () => {
 
               <div className={styles.infocard}>
                 <h3>👤 Your Info</h3>
-                <p><strong>Name:</strong> {user.fullname}</p>
+                <p><strong>Name:</strong> {user.name}</p>
                 <p><strong>Email:</strong> {user.email}</p>
-                <p><strong>Ward:</strong> {user.ward}</p>
                 <p><strong>Role:</strong> {user.role}</p>
               </div>
 
               <div className={styles.infocard}>
                 <h3>❓ Need Help?</h3>
-                <p><a onClick={()=>navigate("/citzens/faq")}>📚 FAQ</a></p>
+                <p><a onClick={()=>navigate("/citizen/faq")}>📚 FAQ</a></p>
                 <p><a onClick={()=>navigate("/citizen/userguide")}>📖 User Guide</a></p>
               </div>
             </div>

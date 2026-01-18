@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styles from './staffuserguidestyle.module.css';
+import { useStaffSupport } from './hooks/supportstaffhook.jsx';
 
 const UserGuideStaff = () => {
   const [user, setUser] = useState(null);
@@ -12,6 +13,7 @@ const UserGuideStaff = () => {
   const sidebarRef = useRef(null);
   const menuIconRef = useRef(null);
   const mainRef = useRef(null);
+  const { fetchProfile,logoutStaff} = useStaffSupport();
 
   const toggleSidebar = () => {
     setIsSidebarOpen(!isSidebarOpen);
@@ -22,40 +24,26 @@ const UserGuideStaff = () => {
   };
 
   const handleLogout = async () => {
-    try {
-      await fetch(import.meta.env.VITE_BACKEND_URL+'/api/auth/logout', {
-        method: 'POST',
-        credentials: 'include',
-      });
-      navigate('/');
-    } catch (err) {
-      console.error('Logout error:', err);
-      navigate('/');
-    }
+    await logoutStaff();
+    navigate('/');
   };
 
   useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        const res = await fetch(import.meta.env.VITE_BACKEND_URL+'/api/auth/me', {
-          credentials: 'include',
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          setUser(data);
+      const initData = async () => {
+        // 1. Fetch User Profile
+        const userData = await fetchProfile();
+        
+        if (userData) {
+          console.log("✅ User data fetched:", userData);
+          setUser(userData);
+          setLoading(false);
         } else {
-          navigate('/');
+          console.log("❌ User not authenticated");
+          navigate("/");
         }
-      } catch (err) {
-        console.error('Error fetching user:', err);
-        navigate('/');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchUser();
+      };
+  
+      initData();
   }, [navigate]);
 
   useEffect(() => {
