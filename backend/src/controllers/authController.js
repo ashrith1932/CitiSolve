@@ -121,6 +121,13 @@ export const sendSignupOtp = async (req, res) => {
             message: 'State, district, and department are required for staff'
         });
     }
+     if (role === 'admin' && (!state || !district)) {
+        return res.json({
+            success: false,
+            message: 'State and district are required for admin'
+        });
+    }
+  
 
     try {
         const existingUser = await userModel.findOne({ email });
@@ -150,6 +157,10 @@ export const sendSignupOtp = async (req, res) => {
             userData.state = state;
             userData.district = district;
             userData.department = department;
+        }
+        if(role==='admin'){
+            userData.state = state;
+            userData.district = district;
         }
 
         const tempUser = new userModel(userData);
