@@ -3,34 +3,35 @@ import transporter from "../config/nodemailer.js";
 export const submitSupportMessage = async (req, res) => {
   try {
     const { subject, category, message } = req.body;
-    const citizen = req.user; // Has _id, name, email from verifyToken
-    
-    // Save to database
+    const user = req.user;
+
     const support = await supportModel.create({
       subject,
       category,
       message,
-      citizen: citizen._id,
+      sender: user._id,
+      senderRole: user.role, // 'user' or 'staff'
       status: 'pending'
     });
+
     
 
     // Send email notification to admin
-    const adminEmail = 'vklalith2007@gmail.com'
+    const adminEmail = 'citisolveotp@gmail.com';
     
 
   const mailOptions = {
-        to: 'duplicate20072007@gmail.com',
+        to: adminEmail,
       subject: `New Support Message: ${subject}`,
       html: `
         <h2>New Support Message Received</h2>
-        <p><strong>From:</strong> ${citizen.name} (${citizen.email})</p>
+        <p><strong>From:</strong> ${user.name} (${user.email})</p>
         <p><strong>Category:</strong> ${category}</p>
         <p><strong>Subject:</strong> ${subject}</p>
         <p><strong>Message:</strong></p>
         <p>${message}</p>
         <br>
-        <p><em>Reply directly to ${citizen.email} to respond.</em></p>
+        <p><em>Reply directly to ${user.email} to respond.</em></p>
       `
     };
     await transporter.sendMail(mailOptions);

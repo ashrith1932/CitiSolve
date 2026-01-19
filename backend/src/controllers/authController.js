@@ -59,6 +59,13 @@ const buildUserResponse = (user) => {
             department: user.department
         };
     }
+    if (user.role ==='admin') {
+        return {
+            ...baseResponse,
+            state: user.state,
+            district: user.district,
+        };
+    }
 
     return baseResponse;
 };

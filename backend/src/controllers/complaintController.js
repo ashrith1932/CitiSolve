@@ -283,15 +283,18 @@ export const getCitizenAnalytics = async (req, res) => {
     console.log('Raw categoryBreakdown:', categoryBreakdown);
 
     // Total counts
-    const [total, resolved, inProgress, pending] = await Promise.all([
+    const [total, resolved, inProgress, pending, assigned, rejected] = await Promise.all([
       complaintModel.countDocuments(query),
       complaintModel.countDocuments({ ...query, status: 'resolved' }),
       complaintModel.countDocuments({ ...query, status: 'in-progress' }),
-      complaintModel.countDocuments({ ...query, status: 'pending' })
+      complaintModel.countDocuments({ ...query, status: 'pending' }),
+      complaintModel.countDocuments({ ...query, status: 'assigned' }),
+      complaintModel.countDocuments({ ...query, status: 'rejected' }),
     ]);
 
+
     // Format status distribution
-    const allStatuses = ['pending', 'in-progress', 'resolved'];
+    const allStatuses = ['pending', 'assigned', 'in-progress', 'resolved', 'rejected'];
     const statusMap = {};
     statusDistribution.forEach(item => {
       statusMap[item._id] = item.count;
@@ -324,7 +327,9 @@ export const getCitizenAnalytics = async (req, res) => {
           total,
           resolved,
           inProgress,
-          pending
+          pending,
+          assigned,
+          rejected
         }
       }
     });

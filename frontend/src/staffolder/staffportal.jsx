@@ -21,7 +21,6 @@ const StaffPortal = () => {
   
   // Dashboard stats state
   const [complaintstats, setComplaintstats] = useState({
-    total: 0,
     assigned: 0,
     inProgress: 0,
     resolved: 0,
@@ -224,15 +223,14 @@ const StaffPortal = () => {
                   ) : (
                     <span className={styles.statNumber} id="totalCount">{complaintstats.total}</span>
                   )}
-                  <span className={styles.statLabel}>Total Assigned</span>
+                  <span className={styles.statLabel}>Total Complaints</span>
                   <div className={styles.statHoverLine}></div>
                 </button>
-
                 <button className={`${styles.stat} ${hookLoading ? styles.loading : ''}`}>
                   {hookLoading ? (
                     <Loader />
                   ) : (
-                    <span className={styles.statNumber} id="assignedCount">{complaintstats.assigned}</span>
+                    <span className={styles.statNumber} id="totalCount">{complaintstats.assigned}</span>
                   )}
                   <span className={styles.statLabel}>Assigned</span>
                   <div className={styles.statHoverLine}></div>

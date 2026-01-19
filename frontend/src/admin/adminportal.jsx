@@ -1,48 +1,52 @@
 import React, { useState, useEffect } from 'react';
-import { Routes, Route, NavLink, useLocation } from 'react-router-dom';
+import { Routes, Route, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import DashboardPage from './adminhome';
 import UsersPage from './adminusers';
 import ComplaintsPage from './admincomplaints';
 import DepartmentsPage from './admindepartments';
 import StaffPage from './adminstaff';
-import styles from './adminlayout.module.css';
-import { useNavigate } from 'react-router-dom';
 import AllocationPage from './adminallocation';
+import styles from './adminlayout.module.css';
+import { useAdminPortal } from './hooks/adminportalhooks.jsx';
 
 const AdminLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  
+  // Destructure logic from the hook
+  const {
+    loading: hookLoading,
+    fetchProfile,
+    logoutAdmin,
+  } = useAdminPortal();
+
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => window.innerWidth <= 768);
-  const [user, setUser] = useState({ name: "Admin User", role: "Super Admin" });
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState(null);
   const [pageTitle, setPageTitle] = useState('Dashboard');
 
+  /* =========================
+     INITIAL DATA FETCH
+  ========================= */
   useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        const res = await fetch(import.meta.env.VITE_BACKEND_URL+'/api/auth/me', {
-          credentials: 'include',
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          console.log("✅ User data fetched:", data);
-          setUser(data);
-        } else {
-          console.log("❌ User not authenticated");
-          navigate('/');
-        }
-      } catch (err) {
-        console.error('❌ Error fetching user:', err);
+    const initData = async () => {
+      // Fetch Admin Profile
+      const userData = await fetchProfile();
+      
+      if (userData) {
+        console.log('✅ Admin data fetched:', userData);
+        setUser(userData);
+      } else {
+        console.log('❌ Admin not authenticated');
         navigate('/');
-      } finally {
-        setLoading(false);
       }
     };
 
-    fetchUser();
+    initData();
   }, [navigate]);
 
+  /* =========================
+     HANDLE RESPONSIVE SIDEBAR
+  ========================= */
   useEffect(() => {
     const handleResize = () => {
       if (window.innerWidth <= 768) {
@@ -54,9 +58,13 @@ const AdminLayout = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  /* =========================
+     UPDATE PAGE TITLE
+  ========================= */
   useEffect(() => {
     const path = location.pathname;
     let title = 'Dashboard';
+    
     if (path === '/admin/complaints') {
       title = 'Complaints';
     } else if (path === '/admin/users') {
@@ -67,33 +75,38 @@ const AdminLayout = () => {
       title = 'Staff Management';
     } else if (path === '/admin/home' || path === '/admin/') {
       title = 'Dashboard';
+    } else if (path === '/admin/allocate') {
+      title = 'Complaint Allocation';
     }
-    else if(path==='/admin/allocate'){
-      title = 'Complaint allocation';
-    }
+    
     setPageTitle(title);
   }, [location.pathname]);
 
+  /* =========================
+     HANDLERS
+  ========================= */
   const handleMenuToggle = () => {
     setIsSidebarCollapsed(!isSidebarCollapsed);
   };
 
   const handleLogout = async () => {
-    try {
-      const res = await fetch(import.meta.env.VITE_BACKEND_URL+'/api/auth/logout', {
-        credentials: 'include',
-      });
-      
-      if (res.ok) {
-        console.log('✅ Logged out successfully');
-        navigate('/');
-      }
-    } catch (err) {
-      console.error('❌ Logout failed:', err);
+    const result = await logoutAdmin();
+    
+    if (result.success) {
+      console.log('✅ Logged out successfully');
+      navigate('/');
+    } else {
+      console.error('❌ Logout failed:', result.error);
+      navigate('/');
     }
   };
 
-  if (loading) {
+  /* =========================
+     RENDERING
+  ========================= */
+
+  // Full Screen Loader
+  if (hookLoading && !user) {
     return (
       <div style={{ 
         display: 'flex', 
@@ -108,6 +121,10 @@ const AdminLayout = () => {
     );
   }
 
+  if (!user) {
+    return null;
+  }
+
   return (
     <div className={styles.pageContainer}>
       {/* === Sidebar === */}
@@ -117,34 +134,67 @@ const AdminLayout = () => {
           <p className={styles.adminBadge}>ADMIN PORTAL</p>
         </div>
         <nav className={styles.sidebarNav}>
-          <NavLink to="/admin/home" className={({ isActive }) => `${styles.navLink} ${isActive ? styles.active : ''}`} onClick={() => window.innerWidth <= 768 && setIsSidebarCollapsed(false)}>
-            <span className={styles.navIcon}>📊</span><span className={styles.navText}>Dashboard</span>
+          <NavLink 
+            to="/admin/home" 
+            className={({ isActive }) => `${styles.navLink} ${isActive ? styles.active : ''}`} 
+            onClick={() => window.innerWidth <= 768 && setIsSidebarCollapsed(false)}
+          >
+            <span className={styles.navIcon}>📊</span>
+            <span className={styles.navText}>Dashboard</span>
           </NavLink>
-          <NavLink to="/admin/allocate" className={({ isActive }) => `${styles.navLink} ${isActive ? styles.active : ''}`} onClick={() => window.innerWidth <= 768 && setIsSidebarCollapsed(false)}>
-            <span className={styles.navIcon}>📑</span><span className={styles.navText}>Complaint Allocation</span>
+          <NavLink 
+            to="/admin/allocate" 
+            className={({ isActive }) => `${styles.navLink} ${isActive ? styles.active : ''}`} 
+            onClick={() => window.innerWidth <= 768 && setIsSidebarCollapsed(false)}
+          >
+            <span className={styles.navIcon}>🔒</span>
+            <span className={styles.navText}>Complaint Allocation</span>
           </NavLink>
-          <NavLink to="/admin/complaints" className={({ isActive }) => `${styles.navLink} ${isActive ? styles.active : ''}`} onClick={() => window.innerWidth <= 768 && setIsSidebarCollapsed(false)}>
-            <span className={styles.navIcon}>📋</span><span className={styles.navText}>Complaints</span>
+          <NavLink 
+            to="/admin/complaints" 
+            className={({ isActive }) => `${styles.navLink} ${isActive ? styles.active : ''}`} 
+            onClick={() => window.innerWidth <= 768 && setIsSidebarCollapsed(false)}
+          >
+            <span className={styles.navIcon}>📋</span>
+            <span className={styles.navText}>Complaints</span>
           </NavLink>
-          <NavLink to="/admin/users" className={({ isActive }) => `${styles.navLink} ${isActive ? styles.active : ''}`} onClick={() => window.innerWidth <= 768 && setIsSidebarCollapsed(false)}>
-            <span className={styles.navIcon}>👥</span><span className={styles.navText}>Users</span>
+          <NavLink 
+            to="/admin/users" 
+            className={({ isActive }) => `${styles.navLink} ${isActive ? styles.active : ''}`} 
+            onClick={() => window.innerWidth <= 768 && setIsSidebarCollapsed(false)}
+          >
+            <span className={styles.navIcon}>👥</span>
+            <span className={styles.navText}>Users</span>
           </NavLink>
-          <NavLink to="/admin/departments" className={({ isActive }) => `${styles.navLink} ${isActive ? styles.active : ''}`} onClick={() => window.innerWidth <= 768 && setIsSidebarCollapsed(false)}>
-            <span className={styles.navIcon}>🏢</span><span className={styles.navText}>Departments</span>
+          <NavLink 
+            to="/admin/departments" 
+            className={({ isActive }) => `${styles.navLink} ${isActive ? styles.active : ''}`} 
+            onClick={() => window.innerWidth <= 768 && setIsSidebarCollapsed(false)}
+          >
+            <span className={styles.navIcon}>🏢</span>
+            <span className={styles.navText}>Departments</span>
           </NavLink>
-          <NavLink to="/admin/staff" className={({ isActive }) => `${styles.navLink} ${isActive ? styles.active : ''}`} onClick={() => window.innerWidth <= 768 && setIsSidebarCollapsed(false)}>
-            <span className={styles.navIcon}>👔</span><span className={styles.navText}>Staff Management</span>
+          <NavLink 
+            to="/admin/staff" 
+            className={({ isActive }) => `${styles.navLink} ${isActive ? styles.active : ''}`} 
+            onClick={() => window.innerWidth <= 768 && setIsSidebarCollapsed(false)}
+          >
+            <span className={styles.navIcon}>👔</span>
+            <span className={styles.navText}>Staff Management</span>
           </NavLink>
         </nav>
         <div className={styles.sidebarFooter}>
           <div className={styles.adminInfo}>
             <div className={styles.adminAvatar}>
-              {user?.fullname ? user.fullname.charAt(0).toUpperCase() : 'A'}
+              {user?.name ? user.name.charAt(0).toUpperCase() : 'A'}
             </div>
             <div>
-              <p className={styles.adminName}>{user?.fullname || 'Admin User'}</p>
+              <p className={styles.adminName}>{user?.name || 'Admin User'}</p>
               <p className={styles.adminRole}>{user?.email || 'admin@citisolve.com'}</p>
-              <p className={styles.adminRole}>id : {user?.id || 'none'}</p>
+              <p className={styles.adminRole}>
+                {user?.district && user?.state ? `${user.district}, ${user.state}` : 'Location: N/A'}
+              </p>
+              <p className={styles.adminRole}>ID: {user?.id || 'none'}</p>
             </div>
           </div>
           <button className={styles.logoutBtn} onClick={handleLogout}>
@@ -152,13 +202,17 @@ const AdminLayout = () => {
           </button>
         </div>
       </div>
-      {isSidebarCollapsed && window.innerWidth <= 768 && <div className={styles.overlay} onClick={() => setIsSidebarCollapsed(true)} />}
+      
+      {isSidebarCollapsed && window.innerWidth <= 768 && (
+        <div className={styles.overlay} onClick={() => setIsSidebarCollapsed(true)} />
+      )}
+      
       {/* === Main Content Area === */}
       <div className={`${styles.mainContent} ${isSidebarCollapsed ? styles.expanded : ''}`}>
         {/* === Navbar === */}
         <div className={styles.topbar}>
           <div className={styles.topbarLeft}>
-             <button className={styles.menuToggle} onClick={handleMenuToggle}>
+            <button className={styles.menuToggle} onClick={handleMenuToggle}>
               ☰
             </button>
           </div>
@@ -173,11 +227,11 @@ const AdminLayout = () => {
         <Routes>
           <Route path="/" element={<DashboardPage />} />
           <Route path="/home" element={<DashboardPage />} />
-          <Route path="/complaints" element={<ComplaintsPage />}/>
-          <Route path="/users" element={<UsersPage />}/>
-          <Route path="/departments" element={<DepartmentsPage />}/>
-          <Route path="/staff" element={<StaffPage />}/>
-          <Route path = "/allocate" element={<AllocationPage />}/>
+          <Route path="/complaints" element={<ComplaintsPage />} />
+          <Route path="/users" element={<UsersPage />} />
+          <Route path="/departments" element={<DepartmentsPage />} />
+          <Route path="/staff" element={<StaffPage />} />
+          <Route path="/allocate" element={<AllocationPage />} />
         </Routes>
       </div>
     </div>

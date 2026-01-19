@@ -203,8 +203,8 @@ const SupportStaff = () => {
             <div className={styles.infoCard}>
               <h3>📞 Administrator Contact</h3>
               <p><strong>Name:</strong> System Administrator</p>
-              <p><strong>Email:</strong> admin@citisolve.com</p>
-              <p><strong>Phone:</strong> +91 98765 43210</p>
+              <p><strong>Email:</strong> citisolveotp@gmail.com</p>
+              <p><strong>Phone:</strong> +91 98765 4XXXX</p>
             </div>
             <div className={styles.formCard} style={{ marginTop: '24px' }}>
               <h2>Contact Administrator</h2>
@@ -222,10 +222,13 @@ const SupportStaff = () => {
                   <label>Category *</label>
                   <select name="category" required>
                     <option value="">Select...</option>
-                    <option value="technical">Technical Issue</option>
-                    <option value="workload">Workload Concern</option>
-                    <option value="escalation">Escalation</option>
-                    <option value="other">Other</option>
+                    <option value="Technical Issue">Technical Issue</option>
+                    <option value="Account Problem">Account Problem</option>
+                    <option value="Complaint Not Assigned">Complaint Not Assigned</option>
+                    <option value="Complaint Status Query">Complaint Status Query</option>
+                    <option value="Feature Request">Feature Request</option>
+                    <option value="Feedback">Feedback</option>
+                    <option value="Other">Other</option>
                   </select>
                 </div>
                 <div className={styles.formGroup}>

@@ -31,7 +31,7 @@ export const getStaffDashboard = async (req, res) => {
     res.json({
       success: true,
       dashboard: {
-        totalComplaints: totalAssigned,
+        total: totalAssigned,        // 🔴 change from totalComplaints → total
         assigned,
         inProgress,
         resolved,

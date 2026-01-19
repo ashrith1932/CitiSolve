@@ -1,13 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import styles from './admincomplaintsstyles.module.css';
+import { useAdminAllocation } from './hooks/adminallocationhook.jsx';
 
 const AllocationPage = () => {
+  const {
+    loading: hookLoading,
+    fetchPendingComplaints,
+    fetchAvailableStaff,
+    assignComplaint,
+    autoAllocateAll,
+  } = useAdminAllocation();
+
   const [complaints, setComplaints] = useState([]);
-  const [staff, setStaff] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [availableStaff, setAvailableStaff] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filters, setFilters] = useState({
-    status: 'all',
     category: 'all',
     priority: 'all',
   });
@@ -16,45 +23,28 @@ const AllocationPage = () => {
   const [selectedComplaint, setSelectedComplaint] = useState(null);
   const [showImageViewer, setShowImageViewer] = useState(false);
   const [selectedStaffId, setSelectedStaffId] = useState('');
+  const [isAllocating, setIsAllocating] = useState(false);
 
+  /* =========================
+     INITIAL DATA FETCH
+  ========================= */
   useEffect(() => {
-    const fetchInitialData = async () => {
-      setLoading(true);
-      try {
-        // Fetch complaints
-        const complaintsRes = await fetch(import.meta.env.VITE_BACKEND_URL+'/api/auth/admin/complaintsallocation', {
-          credentials: 'include'
-        });
-        const complaintsData = await complaintsRes.json();
-        
-        if (complaintsRes.ok) {
-          setComplaints(complaintsData.complaints || []);
-        } else {
-          console.error('Failed to fetch complaints:', complaintsData.error);
-          setComplaints([]);
-        }
-
-        // Fetch staff members
-        const staffRes = await fetch(import.meta.env.VITE_BACKEND_URL+'/api/auth/admin/staff', {
-          credentials: 'include'
-        });
-        const staffData = await staffRes.json();
-        
-        if (staffRes.ok) {
-          setStaff(staffData.staff || []);
-        } else {
-          console.error('Failed to fetch staff:', staffData.error);
-          setStaff([]);
-        }
-      } catch (error) {
-        console.error('Error in initial fetch:', error);
-      } finally {
-        setLoading(false);
+    const initData = async () => {
+      console.log('📋 Fetching pending complaints...');
+      const complaintsData = await fetchPendingComplaints();
+      
+      if (complaintsData) {
+        console.log('✅ Complaints received:', complaintsData);
+        setComplaints(complaintsData);
       }
     };
-    fetchInitialData();
+
+    initData();
   }, []);
 
+  /* =========================
+     FILTER HANDLERS
+  ========================= */
   const handleFilterChange = (e) => {
     const { name, value } = e.target;
     setFilters((prevFilters) => ({ ...prevFilters, [name]: value }));
@@ -66,37 +56,38 @@ const AllocationPage = () => {
 
   const getFilteredComplaints = () => {
     return complaints.filter((c) => {
-      const statusMatch = filters.status === 'all' || c.status === filters.status;
       const categoryMatch = filters.category === 'all' || c.category === filters.category;
       const priorityMatch = filters.priority === 'all' || c.priority === filters.priority;
 
       if (searchTerm === '') {
-        return statusMatch && categoryMatch && priorityMatch;
+        return categoryMatch && priorityMatch;
       }
 
       const searchLower = searchTerm.toLowerCase();
       
       const searchableFields = [
-        c.id?.toString(),
-        c.user_id?.toString(),
-        c.user_email?.toString(),
+        c._id?.toString(),
+        c.citizen?.name?.toString(),
+        c.citizen?.email?.toString(),
         c.title?.toString(),
         c.description?.toString(),
         c.category?.toString(),
-        c.location?.toString(),
+        c.landmark?.toString(),
         c.priority?.toString(),
-        c.status?.toString(),
-        c.created_at ? new Date(c.created_at).toLocaleString() : '',
+        c.createdAt ? new Date(c.createdAt).toLocaleString() : '',
       ];
 
       const searchMatch = searchableFields.some(field => 
         field && field.toLowerCase().includes(searchLower)
       );
 
-      return statusMatch && categoryMatch && priorityMatch && searchMatch;
+      return categoryMatch && priorityMatch && searchMatch;
     });
   };
 
+  /* =========================
+     EXPORT CSV
+  ========================= */
   const handleExportCSV = () => {
     const filteredComplaints = getFilteredComplaints();
     
@@ -107,35 +98,35 @@ const AllocationPage = () => {
 
     const headers = [
       'ID',
-      'User ID',
-      'User Email',
+      'Citizen Name',
+      'Citizen Email',
       'Title',
       'Description',
       'Category',
       'Location',
       'Priority',
-      'Status',
-      'Created At',
-      'Image URL'
+      'State',
+      'District',
+      'Created At'
     ];
 
     const csvRows = [
       headers.join(','),
       ...filteredComplaints.map(c => {
-        const formattedCreatedAt = c.created_at ? `"${new Date(c.created_at).toLocaleString().replace(/"/g, '""')}"` : '""';
+        const formattedCreatedAt = c.createdAt ? `"${new Date(c.createdAt).toLocaleString().replace(/"/g, '""')}"` : '""';
 
         const row = [
-          `"${c.id || ''}"`,
-          `"${c.user_id || ''}"`,
-          `"${c.user_email || ''}"`,
+          `"${c._id || ''}"`,
+          `"${c.citizen?.name || ''}"`,
+          `"${c.citizen?.email || ''}"`,
           `"${(c.title || '').replace(/"/g, '""')}"`,
           `"${(c.description || '').replace(/"/g, '""')}"`,
           `"${c.category || ''}"`,
-          `"${(c.location || '').replace(/"/g, '""')}"`,
-          `"${c.priority || ''}"`,
-          `"${c.status || ''}"`,
-          formattedCreatedAt,
-          `"${c.imageurl || ''}"`
+          `"${(c.landmark || '').replace(/"/g, '""')}"`,
+          `"${c.priority || 'medium'}"`,
+          `"${c.state || ''}"`,
+          `"${c.district || ''}"`,
+          formattedCreatedAt
         ];
         return row.join(',');
       })
@@ -147,7 +138,7 @@ const AllocationPage = () => {
     const url = URL.createObjectURL(blob);
     
     link.setAttribute('href', url);
-    link.setAttribute('download', `complaints_export_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `pending_complaints_${new Date().toISOString().split('T')[0]}.csv`);
     link.style.visibility = 'hidden';
     
     document.body.appendChild(link);
@@ -157,41 +148,44 @@ const AllocationPage = () => {
     URL.revokeObjectURL(url);
   };
 
+  /* =========================
+     COMPLAINT DETAIL HANDLERS
+  ========================= */
   const handleViewDetails = (complaint) => {
     setSelectedComplaint(complaint);
     setShowDetailModal(true);
   };
 
-  const getMatchingStaff = (complaint) => {
-    // Filter staff members by matching department (category)
-    return staff.filter(s => s.department === complaint.category);
-  };
-
-  const handleAllocateClick = (complaint) => {
-    if (complaint.status === 'resolved') {
-      alert('Cannot allocate a resolved complaint');
-      return;
-    }
-
-    const matchingStaff = getMatchingStaff(complaint);
-    if (matchingStaff.length === 0) {
-      alert(`No staff members available for ${complaint.category} department`);
+  const handleAllocateClick = async (complaint) => {
+    console.log('🔍 Fetching available staff for complaint:', complaint._id);
+    
+    // Fetch available staff for this complaint
+    const staff = await fetchAvailableStaff(complaint._id);
+    
+    if (!staff || staff.length === 0) {
+      alert(`No staff members available for ${complaint.category} department in ${complaint.district}`);
       return;
     }
 
     setSelectedComplaint(complaint);
+    setAvailableStaff(staff);
     setSelectedStaffId('');
     setShowAllocationModal(true);
   };
 
   const handleRandomAllocation = () => {
-    const matchingStaff = getMatchingStaff(selectedComplaint);
-    if (matchingStaff.length === 0) {
+    if (availableStaff.length === 0) {
       alert('No staff members available for this department');
       return;
     }
-    const randomStaff = matchingStaff[Math.floor(Math.random() * matchingStaff.length)];
-    setSelectedStaffId(randomStaff.id);
+    
+    // Sort by workload and pick the one with least workload
+    const sortedStaff = [...availableStaff].sort((a, b) => 
+      (a.workload?.active || 0) - (b.workload?.active || 0)
+    );
+    
+    const randomStaff = sortedStaff[Math.floor(Math.random() * Math.min(3, sortedStaff.length))];
+    setSelectedStaffId(randomStaff._id);
   };
 
   const handleAllocationSubmit = async () => {
@@ -200,62 +194,72 @@ const AllocationPage = () => {
       return;
     }
 
-    try {
-      const res = await fetch(import.meta.env.VITE_BACKEND_URL+'/api/auth/admin/complaints/allocate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          complaintId: selectedComplaint.id,
-          staffId: selectedStaffId
-        }),
-        credentials: 'include',
-      });
-      
-      const data = await res.json();
-      
-      if (!res.ok) {
-        alert('Failed to allocate complaint: ' + (data.error || 'Unknown error'));
-        return;
-      }
+    setIsAllocating(true);
+    const result = await assignComplaint(selectedComplaint._id, selectedStaffId);
 
-      // Update complaint status in local state
-      setComplaints(
-        complaints.filter((u) => u.id !== selectedComplaint.id)
-      );
-
+    if (result.success) {
+      // Remove allocated complaint from list
+      setComplaints(complaints.filter((c) => c._id !== selectedComplaint._id));
       setShowAllocationModal(false);
       alert('Complaint allocated successfully');
-    } catch (error) {
-      console.error('Error allocating complaint:', error);
-      alert('Error allocating complaint');
+    } else {
+      alert('Failed to allocate complaint: ' + (result.error || 'Unknown error'));
     }
+    setIsAllocating(false);
+  };
+
+  /* =========================
+     AUTO ALLOCATE ALL
+  ========================= */
+  const handleAutoAllocateAll = async () => {
+    const confirmed = window.confirm(
+      `Are you sure you want to auto-allocate all ${complaints.length} pending complaints? ` +
+      'This will assign complaints to staff with the least workload in matching departments.'
+    );
+
+    if (!confirmed) return;
+
+    setIsAllocating(true);
+    const result = await autoAllocateAll();
+
+    if (result.success) {
+      // Refresh complaints list
+      const freshComplaints = await fetchPendingComplaints();
+      setComplaints(freshComplaints);
+      
+      alert(
+        `Auto-allocation complete!\n\n` +
+        `✅ Allocated: ${result.allocated}\n` +
+        `❌ Failed: ${result.failed}\n\n` +
+        (result.errors?.length > 0 ? `Errors:\n${result.errors.map(e => `- ${e.error}`).join('\n')}` : '')
+      );
+    } else {
+      alert('Auto-allocation failed: ' + (result.error || 'Unknown error'));
+    }
+    setIsAllocating(false);
   };
 
   const handleImageClick = () => {
     setShowImageViewer(true);
   };
 
-  const getStatusBadge = (status) => {
-    if (!status) return 'N/A';
-    const statusText = status === 'progress' ? 'In Progress' : status.charAt(0).toUpperCase() + status.slice(1);
-    let badgeClass = '';
-    if (status === 'pending') badgeClass = 'badgePending';
-    else if (status === 'progress') badgeClass = 'badgeProgress';
-    else if (status === 'resolved') badgeClass = 'badgeResolved';
-    return <span className={`${styles.badge} ${styles[badgeClass]}`}>{statusText}</span>;
-  };
-
+  /* =========================
+     UTILITY FUNCTIONS
+  ========================= */
   const getPriorityBadge = (priority) => {
-    if (!priority) return 'N/A';
+    const p = priority || 'medium';
     let badgeClass = '';
-    if (priority === 'high') badgeClass = 'badgeHigh';
-    else if (priority === 'medium') badgeClass = 'badgeMedium';
-    else if (priority === 'low') badgeClass = 'badgeLow';
-    return <span className={`${styles.badge} ${styles[badgeClass]}`}>{priority.toUpperCase()}</span>;
+    if (p === 'high') badgeClass = 'badgeHigh';
+    else if (p === 'medium') badgeClass = 'badgeMedium';
+    else if (p === 'low') badgeClass = 'badgeLow';
+    return <span className={`${styles.badge} ${styles[badgeClass]}`}>{p.toUpperCase()}</span>;
   };
 
+  /* =========================
+     RENDER TABLE
+  ========================= */
   const renderTableBody = () => {
-    if (loading) {
+    if (hookLoading) {
       return (
         <tr>
           <td colSpan="9" className={styles.loadingCell}>
@@ -271,22 +275,22 @@ const AllocationPage = () => {
       return (
         <tr>
           <td colSpan="9" className={styles.noDataCell}>
-            No complaints found
+            No pending complaints found
           </td>
         </tr>
       );
     }
 
     return filteredComplaints.map((c) => (
-      <tr key={c.id}>
+      <tr key={c._id}>
         <td data-label="ID">
-          <strong>{c.id}</strong>
+          <strong>{c._id.slice(-6)}</strong>
         </td>
-        <td data-label="User ID" className={styles.truncatedText} title={c.user_id}>
-          {c.user_id}
+        <td data-label="Citizen" className={styles.truncatedText} title={c.citizen?.name}>
+          {c.citizen?.name || 'N/A'}
         </td>
-        <td data-label="User Email" className={styles.truncatedText} title={c.user_email}>
-          {c.user_email || 'N/A'}
+        <td data-label="Email" className={styles.truncatedText} title={c.citizen?.email}>
+          {c.citizen?.email || 'N/A'}
         </td>
         <td data-label="Title" className={styles.truncatedText} title={c.title}>
           {c.title}
@@ -294,11 +298,11 @@ const AllocationPage = () => {
         <td data-label="Category">
           {c.category ? c.category.charAt(0).toUpperCase() + c.category.slice(1) : 'N/A'}
         </td>
-        <td data-label="Location" className={styles.truncatedText} title={c.location}>
-          {c.location}
+        <td data-label="Location" className={styles.truncatedText} title={c.landmark}>
+          {c.landmark || c.district}
         </td>
         <td data-label="Priority">{getPriorityBadge(c.priority)}</td>
-        <td data-label="Status">{getStatusBadge(c.status)}</td>
+        <td data-label="District">{c.district}</td>
         <td data-label="Actions" className={styles.actionCell}>
           <button 
             className={`${styles.actionBtn} ${styles.view}`} 
@@ -309,9 +313,8 @@ const AllocationPage = () => {
           </button>
           <button
             className={`${styles.actionBtn} ${styles.edit}`}
-            title={c.status === 'resolved' ? 'Cannot allocate resolved complaint' : 'Allocate'}
+            title="Allocate"
             onClick={() => handleAllocateClick(c)}
-            disabled={c.status === 'resolved'}
           >
             Allocate
           </button>
@@ -325,13 +328,22 @@ const AllocationPage = () => {
       <div className={styles.pageHeader}>
         <h2>Complaint Allocation</h2>
         <div className={styles.pageActions}>
-          <button className={styles.btnPrimary} onClick={handleExportCSV}>
+          <button 
+            className={styles.btnPrimary} 
+            onClick={handleAutoAllocateAll}
+            disabled={isAllocating || complaints.length === 0}
+          >
+            🤖 Auto-Allocate All ({complaints.length})
+          </button>
+          <button className={styles.btnSecondary} onClick={handleExportCSV}>
             📥 Export CSV
           </button>
           <button
             className={styles.btnSecondary}
-            onClick={() => {
-              setFilters({ status: 'all', category: 'all', priority: 'all' });
+            onClick={async () => {
+              const fresh = await fetchPendingComplaints();
+              setComplaints(fresh);
+              setFilters({ category: 'all', priority: 'all' });
               setSearchTerm('');
             }}
           >
@@ -341,20 +353,6 @@ const AllocationPage = () => {
       </div>
 
       <div className={styles.filterSection}>
-        <div className={styles.filterGroup}>
-          <label>Status:</label>
-          <select 
-            name="status" 
-            className={styles.filterSelect} 
-            value={filters.status} 
-            onChange={handleFilterChange}
-          >
-            <option value="all">All Status</option>
-            <option value="pending">Pending</option>
-            <option value="progress">In Progress</option>
-            <option value="resolved">Resolved</option>
-          </select>
-        </div>
         <div className={styles.filterGroup}>
           <label>Category:</label>
           <select 
@@ -368,7 +366,7 @@ const AllocationPage = () => {
             <option value="water">Water</option>
             <option value="power">Power</option>
             <option value="sanitation">Sanitation</option>
-            <option value="others">Others</option>
+            <option value="other">Other</option>
           </select>
         </div>
         <div className={styles.filterGroup}>
@@ -401,13 +399,13 @@ const AllocationPage = () => {
           <thead>
             <tr>
               <th>ID</th>
-              <th>User ID</th>
-              <th>User Email</th>
+              <th>Citizen</th>
+              <th>Email</th>
               <th>Title</th>
               <th>Category</th>
               <th>Location</th>
               <th>Priority</th>
-              <th>Status</th>
+              <th>District</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -429,27 +427,27 @@ const AllocationPage = () => {
               <div className={styles.detailGrid}>
                 <div className={styles.detailItem}>
                   <strong>ID:</strong>
-                  <span>{selectedComplaint.id}</span>
+                  <span>{selectedComplaint._id}</span>
                 </div>
                 <div className={styles.detailItem}>
-                  <strong>User ID:</strong>
-                  <span>{selectedComplaint.user_id}</span>
+                  <strong>Citizen:</strong>
+                  <span>{selectedComplaint.citizen?.name || 'N/A'}</span>
                 </div>
                 <div className={styles.detailItem}>
-                  <strong>User Email:</strong>
-                  <span>{selectedComplaint.user_email || 'N/A'}</span>
+                  <strong>Email:</strong>
+                  <span>{selectedComplaint.citizen?.email || 'N/A'}</span>
                 </div>
                 <div className={styles.detailItem}>
                   <strong>Category:</strong>
-                  <span>{selectedComplaint.category ? selectedComplaint.category.charAt(0).toUpperCase() + selectedComplaint.category.slice(1) : 'N/A'}</span>
+                  <span>{selectedComplaint.category?.charAt(0).toUpperCase() + selectedComplaint.category?.slice(1)}</span>
                 </div>
                 <div className={styles.detailItem}>
                   <strong>Priority:</strong>
                   <span>{getPriorityBadge(selectedComplaint.priority)}</span>
                 </div>
                 <div className={styles.detailItem}>
-                  <strong>Status:</strong>
-                  <span>{getStatusBadge(selectedComplaint.status)}</span>
+                  <strong>District:</strong>
+                  <span>{selectedComplaint.district}, {selectedComplaint.state}</span>
                 </div>
                 <div className={`${styles.detailItem} ${styles.fullWidth}`}>
                   <strong>Title:</strong>
@@ -457,25 +455,32 @@ const AllocationPage = () => {
                 </div>
                 <div className={`${styles.detailItem} ${styles.fullWidth}`}>
                   <strong>Location:</strong>
-                  <span>{selectedComplaint.location}</span>
+                  <span>{selectedComplaint.landmark}</span>
                 </div>
                 <div className={`${styles.detailItem} ${styles.fullWidth}`}>
                   <strong>Created At:</strong>
-                  <span>{new Date(selectedComplaint.created_at).toLocaleString()}</span>
+                  <span>{new Date(selectedComplaint.createdAt).toLocaleString()}</span>
                 </div>
                 <div className={`${styles.detailItem} ${styles.fullWidth} ${styles.description}`}>
                   <strong>Description:</strong>
                   <p>{selectedComplaint.description || 'N/A'}</p>
                 </div>
-                {selectedComplaint.imageurl && (
+                {selectedComplaint.images && selectedComplaint.images.length > 0 && (
                   <div className={`${styles.detailItem} ${styles.fullWidth} ${styles.imageContainer}`}>
-                    <strong>Image:</strong>
-                    <img 
-                      src={selectedComplaint.imageurl} 
-                      alt="Complaint" 
-                      onClick={handleImageClick} 
-                      style={{ cursor: 'pointer' }}
-                    />
+                    <strong>Images:</strong>
+                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                      {selectedComplaint.images.map((img, idx) => (
+                        <img 
+                          key={idx}
+                          src={img} 
+                          alt={`Complaint ${idx + 1}`} 
+                          onClick={() => {
+                            setShowImageViewer(true);
+                          }} 
+                          style={{ cursor: 'pointer', maxWidth: '200px', maxHeight: '200px' }}
+                        />
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
@@ -486,28 +491,37 @@ const AllocationPage = () => {
 
       {/* Allocation Modal */}
       {showAllocationModal && selectedComplaint && (
-        <div className={styles.modalBackdrop} onClick={() => setShowAllocationModal(false)}>
+        <div className={styles.modalBackdrop} onClick={() => !isAllocating && setShowAllocationModal(false)}>
           <div className={`${styles.modalContent} ${styles.editModal}`} onClick={(e) => e.stopPropagation()}>
             <div className={styles.modalHeader}>
-              <h3>Allocate Complaint #{selectedComplaint.id}</h3>
-              <button className={styles.closeBtn} onClick={() => setShowAllocationModal(false)}>
+              <h3>Allocate Complaint</h3>
+              <button className={styles.closeBtn} onClick={() => !isAllocating && setShowAllocationModal(false)}>
                 ×
               </button>
             </div>
             <div className={styles.modalBody}>
+              <p style={{ marginBottom: '15px' }}>
+                <strong>Complaint:</strong> {selectedComplaint.title}<br />
+                <strong>Category:</strong> {selectedComplaint.category}<br />
+                <strong>District:</strong> {selectedComplaint.district}
+              </p>
+
               <div className={styles.formRow}>
                 <div className={styles.formGroup}>
-                  <label htmlFor="staffSelect">Select Staff Member ({selectedComplaint.category} department)</label>
+                  <label htmlFor="staffSelect">
+                    Select Staff Member ({availableStaff.length} available)
+                  </label>
                   <select
                     id="staffSelect"
                     className={styles.filterSelect}
                     value={selectedStaffId}
                     onChange={(e) => setSelectedStaffId(e.target.value)}
+                    disabled={isAllocating}
                   >
                     <option value="">-- Select Staff --</option>
-                    {getMatchingStaff(selectedComplaint).map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name} ({s.email})
+                    {availableStaff.map((s) => (
+                      <option key={s._id} value={s._id}>
+                        {s.name} - Active: {s.workload?.active || 0} ({s.email})
                       </option>
                     ))}
                   </select>
@@ -519,8 +533,9 @@ const AllocationPage = () => {
                     className={styles.btnSecondary} 
                     onClick={handleRandomAllocation}
                     type="button"
+                    disabled={isAllocating}
                   >
-                    Assign Randomly 🔀
+                    Assign to Least Busy 🔀
                   </button>
                 </div>
               </div>
@@ -529,6 +544,7 @@ const AllocationPage = () => {
                 <button 
                   className={styles.btnSecondary} 
                   onClick={() => setShowAllocationModal(false)}
+                  disabled={isAllocating}
                 >
                   Cancel
                 </button>
@@ -536,8 +552,9 @@ const AllocationPage = () => {
                   type="button" 
                   className={styles.btnPrimary} 
                   onClick={handleAllocationSubmit}
+                  disabled={isAllocating}
                 >
-                  Assign
+                  {isAllocating ? 'Assigning...' : 'Assign'}
                 </button>
               </div>
             </div>
@@ -546,13 +563,13 @@ const AllocationPage = () => {
       )}
 
       {/* Image Viewer Modal */}
-      {showImageViewer && selectedComplaint && selectedComplaint.imageurl && (
+      {showImageViewer && selectedComplaint && selectedComplaint.images && selectedComplaint.images.length > 0 && (
         <div className={styles.imageViewer} onClick={() => setShowImageViewer(false)}>
           <button className={styles.closeImageViewer} onClick={() => setShowImageViewer(false)}>
             ×
           </button>
           <img 
-            src={selectedComplaint.imageurl} 
+            src={selectedComplaint.images[0]} 
             alt="Complaint Full Screen" 
             onClick={(e) => e.stopPropagation()} 
           />

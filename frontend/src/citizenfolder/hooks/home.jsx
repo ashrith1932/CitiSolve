@@ -68,6 +68,8 @@ export const useCitizenPortal = () => {
       roads: categoryMap.roads || 0,
       water: categoryMap.water || 0,
       power: categoryMap.power || 0,
+      assigned: summary.assigned || 0,
+      rejected: summary.rejected || 0,
       sanitation: categoryMap.sanitation || 0,
       other: categoryMap.other || 0,
     };

@@ -41,7 +41,7 @@ export const useStaffSupport = () => {
     setError(null);
 
     try {
-      const res = await fetch(`${API}/api/staff/contact-admin`, {
+      const res = await fetch(`${API}/api/support/submit`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

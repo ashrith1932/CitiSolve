@@ -4,6 +4,7 @@ import styles from "./citizenstyle.module.css";
 import Chart from "chart.js/auto";
 // Import the custom hook from home.jsx
 import { useCitizenPortal } from "./hooks/home.jsx";
+import { assign } from "nodemailer/lib/shared/index.js";
 
 const CitizenPortal = () => {
   const navigate = useNavigate();
@@ -29,7 +30,9 @@ const CitizenPortal = () => {
     roads: 0,
     water: 0,
     power: 0,
+    assigned: 0,
     sanitation: 0,
+    rejected: 0,
     other: 0,
   });
 
@@ -207,12 +210,12 @@ const CitizenPortal = () => {
     });
 
     const chartColors = {
-      primary: "#dda15e",
-      secondary: "#bc6c25",
-      success: "#606c38",
+      primary: "#887d7d",
+      secondary: "#bc9425",
+      success: "#45ad37",
       warning: "#f4a261",
-      danger: "#e76f51",
-      info: "#2a9d8f",
+      danger: "#e54017",
+      info: "#79adee",
     };
 
     const responsiveOptions = {
@@ -235,11 +238,11 @@ const CitizenPortal = () => {
       chartRefs.current.statusChart = new Chart(statusCtx.getContext("2d"), {
         type: "doughnut",
         data: {
-          labels: ["Resolved", "In Progress", "Pending"],
+          labels: ["Resolved", "In Progress", "Pending"," Assigned","Rejected"],
           datasets: [
             {
-              data: [complaintsdata.resolved, complaintsdata.inprogress, complaintsdata.pending],
-              backgroundColor: [chartColors.success, chartColors.warning, chartColors.danger],
+              data: [complaintsdata.resolved, complaintsdata.inprogress, complaintsdata.pending, complaintsdata.assigned,complaintsdata.rejected],
+              backgroundColor: [chartColors.success, chartColors.warning, chartColors.danger, chartColors.primary, chartColors.info],
               borderWidth: 0,
             },
           ],
@@ -383,6 +386,14 @@ const CitizenPortal = () => {
                 <div className={`${styles.stat} ${styles["complaint-card"]} ${hookLoading ? styles.loading : ''}`} data-category="pending">
                   <span className={styles.statnumber}>{hookLoading ? <span style={{visibility: 'hidden'}}>00</span> : complaintsdata.pending}</span>
                   <span className={styles.statlabel}>Pending</span>
+                </div>
+                <div className={`${styles.stat} ${styles["complaint-card"]} ${hookLoading ? styles.loading : ''}`} data-category="pending">
+                  <span className={styles.statnumber}>{hookLoading ? <span style={{visibility: 'hidden'}}>00</span> : complaintsdata.assigned}</span>
+                  <span className={styles.statlabel}>Assigned</span>
+                </div>
+                <div className={`${styles.stat} ${styles["complaint-card"]} ${hookLoading ? styles.loading : ''}`} data-category="pending">
+                  <span className={styles.statnumber}>{hookLoading ? <span style={{visibility: 'hidden'}}>00</span> : complaintsdata.rejected}</span>
+                  <span className={styles.statlabel}>Rejected</span>
                 </div>
               </div>
 

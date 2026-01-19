@@ -13,7 +13,6 @@ const supportRouter = express.Router();
 supportRouter.post(
   '/submit', 
   verifyToken,
-  citizenAuth,
   submitSupportMessage
 );
 

@@ -18,8 +18,11 @@ const supportSchema = new mongoose.Schema({
       'Complaint Status Query',
       'Feature Request',
       'Feedback',
+      'Workload Concern',
+      'Escalation',
       'Other'
     ]
+
   },
   
   message: {
@@ -30,11 +33,18 @@ const supportSchema = new mongoose.Schema({
   },
   
   // Citizen details
-  citizen: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'user',
-    required: true,
-    index: true
+  sender: {
+  type: mongoose.Schema.Types.ObjectId,
+  ref: 'user',
+  required: true,
+  index: true
+  },
+
+  senderRole: {
+  type: String,
+  enum: ['citizen', 'staff'],
+  required: true,
+  index: true
   },
   
   // Simple status tracking
@@ -53,7 +63,7 @@ const supportSchema = new mongoose.Schema({
   
 }, { timestamps: true });
 
-supportSchema.index({ citizen: 1, status: 1 });
+supportSchema.index({ sender: 1, senderRole: 1, status: 1 });
 
 const supportModel = mongoose.model('support', supportSchema);
 

@@ -1,50 +1,48 @@
 import React, { useEffect, useState } from 'react';
 import styles from './adminstaffstyle.module.css';
+import { useAdminStaff } from './hooks/adminstaffhooks.jsx';
+
 
 const StaffPage = () => {
+  const {
+    loading: hookLoading,
+    fetchStaff,
+    fetchStaffById,
+  } = useAdminStaff();
+
   const [staffData, setStaffData] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filters, setFilters] = useState({ department: 'all' });
   const [showDetailModal, setShowDetailModal] = useState(false);
-  const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [selectedStaff, setSelectedStaff] = useState(null);
+  const [pageLoading, setPageLoading] = useState(false);
 
-  const fetchStaffMembers = async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      if (filters.department !== 'all') {
-        params.append('department', filters.department);
-      }
-      if (searchTerm) {
-        params.append('search', searchTerm);
-      }
-
-      const res = await fetch(import.meta.env.VITE_BACKEND_URL+`/api/auth/admin/staff?${params.toString()}`, {
-        credentials: 'include',
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setStaffData(data.staff || []);
-      } else {
-        console.error('Failed to fetch staff:', data.error);
-        setStaffData([]);
-      }
-    } catch (error) {
-      console.error('Error in fetch:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  /* =========================
+     FETCH STAFF (WITH DEBOUNCE)
+  ========================= */
   useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      fetchStaffMembers();
-    }, 500); // Debounce API calls
+    setPageLoading(true);
+    const timeoutId = setTimeout(async () => {
+      console.log('👔 Fetching staff...');
+      const result = await fetchStaff({
+        department: filters.department,
+        search: searchTerm,
+        limit: 100,
+      });
+      
+      if (result.staff) {
+        console.log('✅ Staff received:', result.staff);
+        setStaffData(result.staff);
+      }
+      setPageLoading(false);
+    }, 500); // Debounce
+
     return () => clearTimeout(timeoutId);
   }, [filters, searchTerm]);
 
+  /* =========================
+     FILTER HANDLERS
+  ========================= */
   const handleFilterChange = (e) => {
     const { name, value } = e.target;
     setFilters((prevFilters) => ({ ...prevFilters, [name]: value }));
@@ -54,70 +52,82 @@ const StaffPage = () => {
     setSearchTerm(e.target.value);
   };
 
-  const handleDeleteClick = (staff) => {
-    setSelectedStaff(staff);
-    setShowConfirmModal(true);
-  };
-
-  const handleConfirmDelete = async () => {
-    try {
-      const res = await fetch(import.meta.env.VITE_BACKEND_URL+`/api/auth/admin/users/delete`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: selectedStaff.id }),
-        credentials: 'include',
-      });
-      if (res.ok) {
-        setStaffData(staffData.filter((s) => s.id !== selectedStaff.id));
-        alert('Staff member deleted successfully.');
-      } else {
-        const data = await res.json();
-        alert('Failed to delete staff member: ' + (data.error || 'Unknown error.'));
-      }
-    } catch (error) {
-      console.error('Error deleting staff:', error);
-      alert('An error occurred while deleting the staff member.');
-    } finally {
-      setShowConfirmModal(false);
-    }
-  };
-
-  const handleViewDetails = (staff) => {
-    setSelectedStaff(staff);
+  /* =========================
+     DETAIL MODAL
+  ========================= */
+  const handleViewDetails = async (staff) => {
+    const freshStaff = await fetchStaffById(staff._id);
+    setSelectedStaff(freshStaff || staff);
     setShowDetailModal(true);
   };
 
+  /* =========================
+     EXPORT CSV
+  ========================= */
   const handleExportCSV = () => {
     if (staffData.length === 0) {
       alert('No staff members to export');
       return;
     }
-    const headers = ['ID', 'Name', 'Email', 'Department', 'Assigned Cases', 'Resolved'];
+
+    const headers = [
+      'ID',
+      'Name',
+      'Email',
+      'Department',
+      'District',
+      'State',
+      'Total Assigned',
+      'Active Cases',
+      'Resolved'
+    ];
+
     const csvRows = staffData.map(s => [
-      s.id,
-      s.name,
-      s.email,
-      s.department,
-      s.assignedCount,
-      s.resolvedCount
+      s._id || '',
+      s.name || '',
+      s.email || '',
+      s.department || '',
+      s.district || '',
+      s.state || '',
+      s.workload?.total || 0,
+      s.workload?.active || 0,
+      s.workload?.resolved || 0
     ]);
+
     const csvContent = [
       headers.map(h => `"${h}"`).join(','),
       ...csvRows.map(row => row.map(field => `"${String(field).replace(/"/g, '""')}"`).join(','))
     ].join('\n');
+
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
+    
     link.setAttribute('href', url);
     link.setAttribute('download', `staff_export_${new Date().toISOString().split('T')[0]}.csv`);
     link.style.visibility = 'hidden';
+    
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    
+    URL.revokeObjectURL(url);
   };
 
+  /* =========================
+     UTILITY FUNCTIONS
+  ========================= */
+  const getSuccessRate = (resolved, assigned) => {
+    if (!assigned || assigned === 0) return 'N/A';
+    const rate = Math.round((resolved / assigned) * 100);
+    return `${rate}%`;
+  };
+
+  /* =========================
+     RENDER TABLE
+  ========================= */
   const renderTableBody = () => {
-    if (loading) {
+    if (pageLoading || hookLoading) {
       return (
         <tr>
           <td colSpan="7" className={styles.loadingCell}>
@@ -127,6 +137,7 @@ const StaffPage = () => {
         </tr>
       );
     }
+
     if (staffData.length === 0) {
       return (
         <tr>
@@ -136,10 +147,11 @@ const StaffPage = () => {
         </tr>
       );
     }
+
     return staffData.map((staff) => (
-      <tr key={staff.id}>
+      <tr key={staff._id}>
         <td data-label="ID">
-          <strong>{staff.id}</strong>
+          <strong>{staff._id.slice(-6)}</strong>
         </td>
         <td data-label="Name" className={styles.truncatedText} title={staff.name}>
           {staff.name}
@@ -147,27 +159,29 @@ const StaffPage = () => {
         <td data-label="Email" className={styles.truncatedText} title={staff.email}>
           {staff.email}
         </td>
-        <td data-label="Department">{staff.department.charAt(0).toUpperCase() + staff.department.slice(1)}</td>
-        <td data-label="Assigned Cases">{staff.assignedCount || 0}</td>
-        <td data-label="Resolved">{staff.resolvedCount || 0}</td>
+        <td data-label="Department">
+          {staff.department.charAt(0).toUpperCase() + staff.department.slice(1)}
+        </td>
+        <td data-label="District">
+          {staff.district}
+        </td>
+        <td data-label="Active Cases">
+          {staff.workload?.active || 0}
+        </td>
+        <td data-label="Resolved">
+          {staff.workload?.resolved || 0}
+        </td>
         <td data-label="Actions" className={styles.actionCell}>
-          <button className={`${styles.actionBtn} ${styles.view}`} title="View Details" onClick={() => handleViewDetails(staff)}>
+          <button 
+            className={`${styles.actionBtn} ${styles.view}`} 
+            title="View Details" 
+            onClick={() => handleViewDetails(staff)}
+          >
             👁️
-          </button>
-          <button className={`${styles.actionBtn} ${styles.delete}`} title="Delete" onClick={() => handleDeleteClick(staff)}>
-            🗑️
           </button>
         </td>
       </tr>
     ));
-  };
-  
-  const getSuccessRate = (resolved, assigned) => {
-    if (assigned === 0) {
-      return 'N/A';
-    }
-    const rate = Math.round((resolved / assigned) * 100);
-    return `${rate}%`;
   };
 
   return (
@@ -175,7 +189,20 @@ const StaffPage = () => {
       <div className={styles.pageHeader}>
         <h2>All Staff</h2>
         <div className={styles.pageActions}>
-          <button className={styles.btnSecondary} onClick={fetchStaffMembers}>
+          <button 
+            className={styles.btnSecondary} 
+            onClick={async () => {
+              setPageLoading(true);
+              const result = await fetchStaff({
+                department: 'all',
+                limit: 100,
+              });
+              setStaffData(result.staff);
+              setFilters({ department: 'all' });
+              setSearchTerm('');
+              setPageLoading(false);
+            }}
+          >
             🔄 Refresh
           </button>
           <button className={styles.btnSecondary} onClick={handleExportCSV}>
@@ -183,15 +210,22 @@ const StaffPage = () => {
           </button>
         </div>
       </div>
+
       <div className={styles.filterSection}>
         <div className={styles.filterGroup}>
           <label>Department:</label>
-          <select name="department" className={styles.filterSelect} value={filters.department} onChange={handleFilterChange}>
+          <select 
+            name="department" 
+            className={styles.filterSelect} 
+            value={filters.department} 
+            onChange={handleFilterChange}
+          >
             <option value="all">All Departments</option>
             <option value="roads">Roads</option>
             <option value="water">Water</option>
             <option value="power">Power</option>
             <option value="sanitation">Sanitation</option>
+            <option value="other">Other</option>
           </select>
         </div>
         <div className={`${styles.filterGroup} ${styles.searchGroup}`}>
@@ -204,6 +238,7 @@ const StaffPage = () => {
           />
         </div>
       </div>
+
       <div className={styles.tableContainer}>
         <table className={styles.dataTable}>
           <thead>
@@ -212,7 +247,8 @@ const StaffPage = () => {
               <th>Name</th>
               <th>Email</th>
               <th>Department</th>
-              <th>Assigned Cases</th>
+              <th>District</th>
+              <th>Active Cases</th>
               <th>Resolved</th>
               <th>Actions</th>
             </tr>
@@ -220,6 +256,8 @@ const StaffPage = () => {
           <tbody>{renderTableBody()}</tbody>
         </table>
       </div>
+
+      {/* Detail Modal */}
       {showDetailModal && selectedStaff && (
         <div className={styles.modalBackdrop} onClick={() => setShowDetailModal(false)}>
           <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
@@ -233,7 +271,7 @@ const StaffPage = () => {
               <div className={styles.detailGrid}>
                 <div className={styles.detailItem}>
                   <strong>ID:</strong>
-                  <span>{selectedStaff.id}</span>
+                  <span>{selectedStaff._id}</span>
                 </div>
                 <div className={styles.detailItem}>
                   <strong>Name:</strong>
@@ -248,42 +286,40 @@ const StaffPage = () => {
                   <span>{selectedStaff.department.charAt(0).toUpperCase() + selectedStaff.department.slice(1)}</span>
                 </div>
                 <div className={styles.detailItem}>
-                  <strong>Assigned Cases:</strong>
-                  <span>{selectedStaff.assignedCount || 0}</span>
+                  <strong>Location:</strong>
+                  <span>{selectedStaff.district}, {selectedStaff.state}</span>
+                </div>
+                <div className={styles.detailItem}>
+                  <strong>Total Assigned:</strong>
+                  <span>{selectedStaff.workload?.total || 0}</span>
+                </div>
+                <div className={styles.detailItem}>
+                  <strong>Active Cases:</strong>
+                  <span>{selectedStaff.workload?.active || 0}</span>
                 </div>
                 <div className={styles.detailItem}>
                   <strong>Resolved Cases:</strong>
-                  <span>{selectedStaff.resolvedCount || 0}</span>
+                  <span>{selectedStaff.workload?.resolved || 0}</span>
                 </div>
                 <div className={`${styles.detailItem} ${styles.fullWidth}`}>
                   <strong>Success Rate:</strong>
                   <span className={styles.successRateValue}>
-                    {getSuccessRate(selectedStaff.resolvedCount, selectedStaff.assignedCount)}
+                    {getSuccessRate(selectedStaff.workload?.resolved, selectedStaff.workload?.total)}
                   </span>
                 </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-      {showConfirmModal && selectedStaff && (
-        <div className={styles.modalBackdrop} onClick={() => setShowConfirmModal(false)}>
-          <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
-            <div className={styles.modalHeader}>
-              <h3>Confirm Deletion</h3>
-              <button className={styles.closeBtn} onClick={() => setShowConfirmModal(false)}>
-                ×
-              </button>
-            </div>
-            <div className={styles.modalBody}>
-              <p>Are you sure you want to delete staff member **{selectedStaff.name}**?</p>
-              <div className={styles.modalActions}>
-                <button className={styles.btnSecondary} onClick={() => setShowConfirmModal(false)}>
-                  Cancel
-                </button>
-                <button className={styles.btnDanger} onClick={handleConfirmDelete}>
-                  Delete
-                </button>
+                
+                {selectedStaff.recentComplaints && selectedStaff.recentComplaints.length > 0 && (
+                  <div className={`${styles.detailItem} ${styles.fullWidth}`}>
+                    <strong>Recent Complaints:</strong>
+                    <ul style={{ margin: '10px 0', paddingLeft: '20px' }}>
+                      {selectedStaff.recentComplaints.slice(0, 5).map((complaint, idx) => (
+                        <li key={idx}>
+                          {complaint.title} - <em>{complaint.status}</em>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             </div>
           </div>
