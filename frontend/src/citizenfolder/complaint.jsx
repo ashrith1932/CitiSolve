@@ -20,6 +20,7 @@ const Complaint = () => {
 
   const [selectedComplaint, setSelectedComplaint] = useState(null);
   const [fullScreenImage, setFullScreenImage] = useState(null);
+  const [pageLoading, setPageLoading] = useState(true);
 
   // 1. Fetch User on Mount
   useEffect(() => {
@@ -37,7 +38,7 @@ const Complaint = () => {
   // 2. Fetch Complaints when filters change (Server-Side Filtering)
   useEffect(() => {
     if (!user) return;
-
+    setPageLoading(true);
     // Debounce search slightly to prevent too many API calls
     const timer = setTimeout(async () => {
       const data = await fetchMyComplaints({
@@ -52,6 +53,7 @@ const Complaint = () => {
       // Safely handling both array or object with complaints key.
       const list = Array.isArray(data) ? data : (data.complaints || []);
       setComplaints(list);
+      setPageLoading(false);
     }, 500);
 
     return () => clearTimeout(timer);
@@ -203,7 +205,7 @@ const Complaint = () => {
           />
         </div>
 
-        {loading && complaints.length === 0 ? (
+        {pageLoading && complaints.length === 0 ? (
           <div className={styles.loadingscreen}>
              <div className={styles.loadernow}>
               <div className={styles.loadingnow}></div>
